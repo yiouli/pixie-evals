@@ -1,0 +1,15 @@
+# Queries and mutations for calling the remote pixie-server
+# These will be used by ariadne-codegen to generate a typed client
+
+# TODO: Add operations once pixie-server schema is available
+# Examples:
+# mutation CreateTestSuite($name: String!, $description: String, $metricIds: [UUID!]!, $inputSchema: JSON!) {
+#   createTestSuite(name: $name, description: $description, metricIds: $metricIds, inputSchema: $inputSchema) {
+#     id
+#     name
+#   }
+# }
+#
+# mutation AddTestCases($testSuiteId: UUID!, $testCases: [TestCaseInput!]!) {
+#   addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)
+# }

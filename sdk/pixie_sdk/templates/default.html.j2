@@ -1,0 +1,33 @@
+"""Default Jinja2 labeling UI template.
+
+This is a minimal template that renders a data entry as a formatted
+JSON viewer. Projects can override this with custom templates.
+"""
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test Case {{ entry_id }}</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 1rem;
+      background: #fafafa;
+    }
+    pre {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <h3>Test Case</h3>
+  <pre>{{ data | tojson(indent=2) }}</pre>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# SDK Server GraphQL Operations
+
+query ListDatasets {
+  listDatasets {
+    id
+    fileName
+    createdAt
+    rowSchema
+  }
+}
+
+query GetDataset($id: UUID!) {
+  getDataset(id: $id) {
+    id
+    fileName
+    createdAt
+    rowSchema
+  }
+}
+
+query GetDataEntries($datasetId: UUID!, $offset: Int, $limit: Int) {
+  getDataEntries(datasetId: $datasetId, offset: $offset, limit: $limit) {
+    id
+    datasetId
+    data
+  }
+}
+
+mutation UploadFile($fileName: String!, $filePath: String!) {
+  uploadFile(fileName: $fileName, filePath: $filePath) {
+    id
+    fileName
+    createdAt
+    rowSchema
+  }
+}
+
+subscription CreateTestSuiteProgress($datasetId: UUID!, $input: TestSuiteCreateInput!) {
+  createTestSuiteProgress(datasetId: $datasetId, input: $input) {
+    status
+    message
+    progress
+    testSuiteId
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "pixie-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "codegen": "graphql-codegen --config codegen.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.12",
+    "@codemirror/lang-json": "^6.0",
+    "@codemirror/view": "^6.36",
+    "@emotion/react": "^11.14",
+    "@emotion/styled": "^11.14",
+    "@mui/icons-material": "^6.4",
+    "@mui/material": "^6.4",
+    "@mui/x-data-grid": "^7.27",
+    "graphql": "^16.10",
+    "graphql-ws": "^5.16",
+    "react": "^19.0",
+    "react-dom": "^19.0",
+    "react-router-dom": "^7.2",
+    "zustand": "^5.0"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "^5.0",
+    "@graphql-codegen/client-preset": "^4.6",
+    "@graphql-codegen/typescript": "^4.1",
+    "@graphql-codegen/typescript-operations": "^4.4",
+    "@graphql-codegen/typescript-react-apollo": "^4.3",
+    "@types/react": "^19.0",
+    "@types/react-dom": "^19.0",
+    "@vitejs/plugin-react": "^4.3",
+    "eslint": "^9.0",
+    "typescript": "^5.7",
+    "vite": "^6.1"
+  }
+}
