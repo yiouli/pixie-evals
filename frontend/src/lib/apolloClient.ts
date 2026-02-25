@@ -3,6 +3,7 @@ import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { createClient } from "graphql-ws";
 import { useAuthStore } from "./store";
+import { REMOTE_SERVER_URL, SDK_SERVER_URL, SDK_SERVER_WS_URL } from "./env";
 
 // Auth middleware — attaches JWT to every remote-server request
 const authLink = new ApolloLink((operation, forward) => {
@@ -17,7 +18,7 @@ const authLink = new ApolloLink((operation, forward) => {
 
 // Remote pixie-server client (with auth)
 const remoteHttpLink = new HttpLink({
-  uri: "http://localhost:8000/graphql",
+  uri: REMOTE_SERVER_URL,
 });
 
 export const remoteClient = new ApolloClient({
@@ -27,12 +28,12 @@ export const remoteClient = new ApolloClient({
 
 // SDK local server client (with WebSocket support for subscriptions)
 const sdkHttpLink = new HttpLink({
-  uri: "http://localhost:8100/graphql",
+  uri: SDK_SERVER_URL,
 });
 
 const sdkWsLink = new GraphQLWsLink(
   createClient({
-    url: "ws://localhost:8100/graphql",
+    url: SDK_SERVER_WS_URL,
   }),
 );
 

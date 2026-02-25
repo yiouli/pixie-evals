@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
+import { SDK_BASE_URL } from "../lib/env";
 
 interface ManualLabelingDialogProps {
   open: boolean;
@@ -73,7 +74,7 @@ export function ManualLabelingDialog({
         {entryId ? (
           <Box sx={{ mb: 3 }}>
             <iframe
-              src={`http://localhost:8100/labeling-ui/${entryId}`}
+              src={`${SDK_BASE_URL}/labeling-ui/${entryId}`}
               title="Labeling UI"
               style={{
                 width: "100%",

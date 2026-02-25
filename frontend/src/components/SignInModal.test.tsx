@@ -5,7 +5,16 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { SignInModal } from "./SignInModal";
-import { useAuthStore } from "../lib/store";
+
+const mockLogin = vi.fn();
+
+vi.mock("../hooks", () => ({
+  useAuth: () => ({
+    login: mockLogin,
+    logout: vi.fn(),
+    isAuthenticated: false,
+  }),
+}));
 
 const theme = createTheme();
 
@@ -51,9 +60,8 @@ describe("SignInModal", () => {
     ).toBeInTheDocument();
   });
 
-  it("should call login with mock token when credentials provided", async () => {
-    // Reset store
-    useAuthStore.setState({ isAuthenticated: false, token: null });
+  it("should call login with credentials when provided", async () => {
+    mockLogin.mockResolvedValue(undefined);
 
     render(
       <TestWrapper>
@@ -69,10 +77,8 @@ describe("SignInModal", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 
-    // Should have logged in (store updated)
-    // Since mock token includes Date.now(), check isAuthenticated
     await vi.waitFor(() => {
-      expect(useAuthStore.getState().isAuthenticated).toBe(true);
+      expect(mockLogin).toHaveBeenCalledWith("testuser", "testpass");
     });
   });
 });

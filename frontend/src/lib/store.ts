@@ -1,12 +1,21 @@
 import { create } from "zustand";
 import type { MetricConfig } from "../components/MetricEditor";
 
-// --- Token persistence ---
+// --- Token & username persistence ---
 const TOKEN_KEY = "pixie-evals-auth-token";
+const USERNAME_KEY = "pixie-evals-auth-username";
 
 function getPersistedToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function getPersistedUsername(): string | null {
+  try {
+    return localStorage.getItem(USERNAME_KEY);
   } catch {
     return null;
   }
@@ -24,25 +33,42 @@ function persistToken(token: string | null) {
   }
 }
 
+function persistUsername(username: string | null) {
+  try {
+    if (username) {
+      localStorage.setItem(USERNAME_KEY, username);
+    } else {
+      localStorage.removeItem(USERNAME_KEY);
+    }
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}
+
 const initialToken = getPersistedToken();
+const initialUsername = getPersistedUsername();
 
 interface AuthState {
   isAuthenticated: boolean;
   token: string | null;
-  login: (token: string) => void;
+  username: string | null;
+  login: (token: string, username: string) => void;
   logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: !!initialToken,
   token: initialToken,
-  login: (token: string) => {
+  username: initialUsername,
+  login: (token: string, username: string) => {
     persistToken(token);
-    set({ isAuthenticated: true, token });
+    persistUsername(username);
+    set({ isAuthenticated: true, token, username });
   },
   logout: () => {
     persistToken(null);
-    set({ isAuthenticated: false, token: null });
+    persistUsername(null);
+    set({ isAuthenticated: false, token: null, username: null });
   },
 }));
 

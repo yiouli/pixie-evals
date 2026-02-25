@@ -30,7 +30,8 @@ export function EvaluationDialog({
   onClose,
   metrics = [],
 }: EvaluationDialogProps) {
-  // TODO: Connect to real evaluation progress endpoint
+  // Evaluation progress endpoint not yet implemented on the server.
+  // This dialog renders the shell UI for now.
   const progress = 0;
 
   return (

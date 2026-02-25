@@ -10,7 +10,7 @@ import {
   Alert,
   CircularProgress,
 } from "@mui/material";
-import { useAuthStore } from "../lib/store";
+import { useAuth } from "../hooks";
 
 interface SignInModalProps {
   /** Whether the modal is visible. */
@@ -29,7 +29,7 @@ export function SignInModal({ open }: SignInModalProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const login = useAuthStore((state) => state.login);
+  const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,10 +42,7 @@ export function SignInModal({ open }: SignInModalProps) {
         return;
       }
 
-      // TODO: Call remote server getAuthToken mutation
-      // For now, accept any credentials with a mock token
-      const mockToken = `mock-token-${Date.now()}`;
-      login(mockToken);
+      await login(username, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

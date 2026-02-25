@@ -70,9 +70,9 @@ export function SelectionView() {
         title: "Test Suites",
         color: theme.palette.primary.main,
         items: testSuites.map((ts) => ({
-          id: ts.id,
+          id: ts.id as string,
           title: ts.name,
-          description: ts.description || `Created ${new Date(ts.createdAt).toLocaleDateString()}`,
+          description: ts.description || "No description",
         })),
         onItemClick: (id: string) => navigate(`/test-suite/${id}`),
       },
@@ -126,21 +126,6 @@ export function SelectionView() {
     <Box sx={{ height: "100%", width: "100%", overflowY: "auto", pt: 2 }}>
       <Fade in timeout={500}>
         <Container maxWidth="lg">
-          {/* Header */}
-          <Typography
-            variant="h3"
-            sx={{ fontWeight: 700, mb: 1, textAlign: "center" }}
-          >
-            Pixie Evals
-          </Typography>
-          <Typography
-            variant="h6"
-            color="text.secondary"
-            sx={{ mb: 4, textAlign: "center" }}
-          >
-            AI Evaluation Platform
-          </Typography>
-
           {/* Search bar */}
           <TextField
             fullWidth

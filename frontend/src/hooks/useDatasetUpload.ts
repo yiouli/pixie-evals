@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useDatasetStore } from "../lib/store";
 import type { UploadFileMutation } from "../generated/sdk/graphql";
+import { SDK_SERVER_URL } from "../lib/env";
 
 /** Dataset type as returned by the UploadFile mutation. */
 type UploadedDataset = UploadFileMutation["uploadFile"];
@@ -53,7 +54,7 @@ export function useDatasetUpload() {
       formData.append("map", JSON.stringify({ "0": ["variables.file"] }));
       formData.append("0", file);
 
-      const response = await fetch("http://localhost:8100/graphql", {
+      const response = await fetch(SDK_SERVER_URL, {
         method: "POST",
         body: formData,
       });

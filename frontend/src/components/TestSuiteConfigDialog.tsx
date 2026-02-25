@@ -23,6 +23,7 @@ import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
+import { useMetrics } from "../hooks/useMetrics";
 import { MetricEditor, type MetricConfig, createEmptyMetric } from "./MetricEditor";
 
 interface TestSuiteConfigDialogProps {
@@ -57,6 +58,7 @@ export function TestSuiteConfigDialog({
 
   const { datasets } = useDatasets();
   const { createTestSuite } = useTestSuites();
+  const { createMetric } = useMetrics();
 
   // Fetch selected dataset details
   const { data: datasetData } = useQuery(GET_DATASET, {
@@ -117,11 +119,33 @@ export function TestSuiteConfigDialog({
     setCreating(true);
     try {
       const validMetrics = metrics.filter((m) => m.name.trim());
+
+      // Create each metric on the remote server and collect IDs
+      const metricIds: string[] = [];
+      for (const m of validMetrics) {
+        const metricId = await createMetric({
+          name: m.name.trim(),
+          config: {
+            type: m.type,
+            categories: m.type === "category" ? m.categories : undefined,
+            scaling: m.type === "scale" ? m.scaleMax : undefined,
+          },
+        });
+        metricIds.push(metricId);
+      }
+
+      // Get input schema from dataset
+      const rawSchema = datasetData?.getDataset?.rowSchema;
+      const inputSchema =
+        typeof rawSchema === "string" ? JSON.parse(rawSchema) : rawSchema ?? {};
+
       const id = await createTestSuite({
         name: name.trim(),
         description: description.trim(),
         metrics: validMetrics,
+        metricIds,
         datasetId: selectedDatasetId,
+        inputSchema,
       });
       onSuccess?.(id);
     } finally {

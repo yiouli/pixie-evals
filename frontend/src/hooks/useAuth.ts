@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useAuthStore } from "../lib/store";
 import { remoteClient } from "../lib/apolloClient";
+import { GET_AUTH_TOKEN } from "../graphql/remote/mutation";
 
 /**
  * Hook for authentication operations.
@@ -10,16 +11,20 @@ import { remoteClient } from "../lib/apolloClient";
  */
 export function useAuth() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const username = useAuthStore((state) => state.username);
   const storeLogin = useAuthStore((state) => state.login);
   const storeLogout = useAuthStore((state) => state.logout);
 
   const login = useCallback(
     async (username: string, password: string) => {
-      // TODO: Replace mock with real getAuthToken mutation
-      void username;
-      void password;
-      const mockToken = `mock-token-${Date.now()}`;
-      storeLogin(mockToken);
+      const { data } = await remoteClient.mutate({
+        mutation: GET_AUTH_TOKEN,
+        variables: { username, password },
+      });
+      if (!data?.getAuthToken.accessToken) {
+        throw new Error("Login failed: no token returned");
+      }
+      storeLogin(data.getAuthToken.accessToken, username);
     },
     [storeLogin],
   );
@@ -29,5 +34,5 @@ export function useAuth() {
     void remoteClient.resetStore();
   }, [storeLogout]);
 
-  return { login, logout, isAuthenticated };
+  return { login, logout, isAuthenticated, username };
 }

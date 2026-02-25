@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -10,6 +10,8 @@ import {
   IconButton,
   Tooltip,
   Chip,
+  CircularProgress,
+  Alert,
 } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
@@ -20,34 +22,9 @@ import { EditableText } from "./EditableText";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
 import { EvaluationDialog } from "./EvaluationDialog";
-
-// Mock data — remote server operations not yet implemented
-const MOCK_METRICS = [
-  { id: "m1", name: "Accuracy" },
-  { id: "m2", name: "Relevance" },
-  { id: "m3", name: "Helpfulness" },
-];
-
-const MOCK_TEST_CASES: Array<Record<string, unknown> & { id: string }> = [
-  {
-    id: "tc1",
-    input: "What is AI?",
-    expected_output: "Artificial Intelligence is...",
-    label: null,
-  },
-  {
-    id: "tc2",
-    input: "Explain ML",
-    expected_output: "Machine Learning is...",
-    label: 8,
-  },
-  {
-    id: "tc3",
-    input: "What is NLP?",
-    expected_output: "Natural Language Processing...",
-    label: null,
-  },
-];
+import { useTestSuites } from "../hooks/useTestSuites";
+import { useMetrics } from "../hooks/useMetrics";
+import { useEvaluation } from "../hooks/useEvaluation";
 
 /**
  * Test suite detail view.
@@ -60,17 +37,69 @@ const MOCK_TEST_CASES: Array<Record<string, unknown> & { id: string }> = [
 export function TestSuiteView() {
   const { testSuiteId } = useParams<{ testSuiteId: string }>();
   const navigate = useNavigate();
-  const [name, setName] = useState("My Test Suite");
-  const [description, setDescription] = useState("");
   const [labelingOpen, setLabelingOpen] = useState(false);
   const [evalOpen, setEvalOpen] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>();
 
-  // TODO: Fetch real data from remote server using testSuiteId
+  // Fetch test suite data from remote server
+  const { testSuites, loading: suitesLoading } = useTestSuites();
+  const { metrics: allMetrics, loading: metricsLoading } = useMetrics();
+  const {
+    testCases,
+    loading: casesLoading,
+    error: casesError,
+    submitLabel,
+    removeTestCase,
+    skipLabeling,
+    nextCandidateId,
+    totalCount,
+  } = useEvaluation(testSuiteId ?? "");
+
+  // Find the current test suite from the list
+  const testSuite = useMemo(
+    () => testSuites.find((ts) => ts.id === testSuiteId),
+    [testSuites, testSuiteId],
+  );
+
+  // Extract the metric IDs associated with this test suite from config
+  const suiteMetricIds: string[] = useMemo(() => {
+    if (!testSuite?.config) return [];
+    const config = testSuite.config as Record<string, unknown>;
+    const ids = config.metric_ids as string[] | undefined;
+    return ids ?? [];
+  }, [testSuite]);
+
+  // Filter metrics to those belonging to this test suite
+  const metrics = useMemo(
+    () =>
+      suiteMetricIds.length > 0
+        ? allMetrics.filter((m) => suiteMetricIds.includes(m.id as string))
+        : allMetrics,
+    [allMetrics, suiteMetricIds],
+  );
+
+  // Extract input schema from test suite config
+  const inputSchema = useMemo(() => {
+    if (!testSuite?.config) return {};
+    const config = testSuite.config as Record<string, unknown>;
+    return config.input_schema ?? {};
+  }, [testSuite]);
+
+  // Transform test cases into rows for the data grid
+  const rows = useMemo(
+    () =>
+      testCases.map((tc) => ({
+        id: tc.testCase.id as string,
+        description: tc.testCase.description ?? "-",
+        created: tc.testCase.createdAt as string,
+        labeled: tc.label ? "Yes" : "No",
+        labelValue: tc.label ? JSON.stringify(tc.label.value) : "-",
+      })),
+    [testCases],
+  );
 
   const handleManualLabel = () => {
-    // TODO: Get next recommended candidate from server
-    setSelectedEntryId("mock-entry-id");
+    setSelectedEntryId(nextCandidateId);
     setLabelingOpen(true);
   };
 
@@ -79,10 +108,57 @@ export function TestSuiteView() {
     setLabelingOpen(true);
   };
 
-  const handleDeleteRow = (id: string) => {
-    // TODO: Call delete mutation
-    console.log("Delete test case:", id);
+  const handleDeleteRow = async (id: string) => {
+    await removeTestCase(id);
   };
+
+  const handleSaveLabel = async (
+    ratings: Record<string, number>,
+    notes: string,
+  ) => {
+    if (!selectedEntryId) return;
+    const labels = Object.entries(ratings).map(([metricId, value]) => ({
+      metricId,
+      value,
+    }));
+    await submitLabel(selectedEntryId, labels, notes || undefined);
+    setLabelingOpen(false);
+  };
+
+  const handleSkip = async () => {
+    if (!selectedEntryId) return;
+    await skipLabeling(selectedEntryId);
+    // Advance to next candidate
+    setSelectedEntryId(nextCandidateId);
+  };
+
+  if (suitesLoading || metricsLoading) {
+    return (
+      <Box
+        sx={{
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!testSuite) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Alert severity="warning">
+          Test suite not found: {testSuiteId}
+        </Alert>
+        <Button onClick={() => navigate("/")} sx={{ mt: 2 }}>
+          Back to selection
+        </Button>
+      </Container>
+    );
+  }
 
   return (
     <Box sx={{ height: "100%", overflowY: "auto" }}>
@@ -94,7 +170,13 @@ export function TestSuiteView() {
               <ArrowBackRoundedIcon />
             </IconButton>
           </Tooltip>
-          <EditableText value={name} onSave={setName} variant="h4" />
+          <EditableText
+            value={testSuite.name}
+            onSave={() => {
+              /* Name update not yet supported */
+            }}
+            variant="h4"
+          />
         </Stack>
 
         {/* Test Suite ID */}
@@ -147,8 +229,10 @@ export function TestSuiteView() {
             Description
           </Typography>
           <EditableText
-            value={description}
-            onSave={setDescription}
+            value={testSuite.description ?? ""}
+            onSave={() => {
+              /* Description update not yet supported */
+            }}
             variant="body1"
             placeholder="Click to add a description..."
             multiline
@@ -161,9 +245,9 @@ export function TestSuiteView() {
             Evaluation Metrics
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap">
-            {MOCK_METRICS.map((metric) => (
+            {metrics.map((metric) => (
               <Chip
-                key={metric.id}
+                key={metric.id as string}
                 label={metric.name}
                 variant="outlined"
               />
@@ -184,11 +268,7 @@ export function TestSuiteView() {
               component="pre"
               sx={{ m: 0, fontSize: "0.875rem", fontFamily: "monospace" }}
             >
-              {JSON.stringify(
-                { input: "string", expected_output: "string" },
-                null,
-                2,
-              )}
+              {JSON.stringify(inputSchema, null, 2)}
             </Box>
           </Paper>
         </Box>
@@ -196,13 +276,19 @@ export function TestSuiteView() {
         {/* Test Cases Grid */}
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-            Test Cases
+            Test Cases ({totalCount})
           </Typography>
+          {casesError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {casesError.message}
+            </Alert>
+          )}
           <TestCaseDataGrid
-            rows={MOCK_TEST_CASES}
+            rows={rows}
             showActions
             onLabel={handleLabelRow}
             onDelete={handleDeleteRow}
+            loading={casesLoading}
           />
         </Box>
       </Container>
@@ -212,21 +298,22 @@ export function TestSuiteView() {
         open={labelingOpen}
         onClose={() => setLabelingOpen(false)}
         entryId={selectedEntryId}
-        metrics={MOCK_METRICS}
-        onSave={(ratings, notes) => {
-          console.log("Save label:", { ratings, notes });
-          setLabelingOpen(false);
-        }}
-        onSkip={() => {
-          console.log("Skip");
-        }}
+        metrics={metrics.map((m) => ({
+          id: m.id as string,
+          name: m.name,
+        }))}
+        onSave={handleSaveLabel}
+        onSkip={handleSkip}
       />
 
       {/* AI Evaluation Dialog */}
       <EvaluationDialog
         open={evalOpen}
         onClose={() => setEvalOpen(false)}
-        metrics={MOCK_METRICS}
+        metrics={metrics.map((m) => ({
+          id: m.id as string,
+          name: m.name,
+        }))}
       />
     </Box>
   );
