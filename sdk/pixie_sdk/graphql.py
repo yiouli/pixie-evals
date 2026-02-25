@@ -9,13 +9,29 @@ Defines types, queries, mutations, and subscriptions for:
 from __future__ import annotations
 
 import enum
+import json
+import os
+import tempfile
 from datetime import datetime
-from typing import AsyncGenerator
+from pathlib import Path
+from typing import Any, AsyncGenerator
 from uuid import UUID
 
 import strawberry
+from strawberry.file_uploads import Upload
 from strawberry.scalars import JSON
 from strawberry.types import Info
+
+from pixie_sdk import db
+from pixie_sdk import embed
+from pixie_sdk import ingest
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+EMBED_BATCH_SIZE = 100  # Rows per OpenAI embedding call
+UPLOAD_BATCH_SIZE = 50  # Test cases per addTestCases mutation
 
 # ============================================================================
 # Strawberry Types
@@ -82,6 +98,38 @@ class TestSuiteCreateInput:
 
 
 # ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _dataset_to_type(d: dict[str, Any]) -> DatasetType:
+    """Convert a dataset dict from the DB to a Strawberry type."""
+    return DatasetType(
+        id=UUID(d["id"]) if isinstance(d["id"], str) else d["id"],
+        file_name=d["file_name"],
+        created_at=(
+            datetime.fromisoformat(d["created_at"])
+            if isinstance(d["created_at"], str)
+            else d["created_at"]
+        ),
+        row_schema=d["row_schema"],
+    )
+
+
+def _entry_to_type(e: dict[str, Any]) -> DataEntryType:
+    """Convert a data entry dict from the DB to a Strawberry type."""
+    return DataEntryType(
+        id=UUID(e["id"]) if isinstance(e["id"], str) else e["id"],
+        dataset_id=(
+            UUID(e["dataset_id"])
+            if isinstance(e["dataset_id"], str)
+            else e["dataset_id"]
+        ),
+        data=e["data"],
+    )
+
+
+# ============================================================================
 # Queries
 # ============================================================================
 
@@ -92,52 +140,19 @@ class Query:
 
     @strawberry.field
     async def list_datasets(self, info: Info) -> list[DatasetType]:
-        """List all locally stored datasets.
-
-        Returns:
-            List of dataset objects.
-        """
-        from pixie_sdk.db import get_db, list_datasets
-
-        db = await get_db()
-        datasets = await list_datasets(db)
-        await db.close()
-
-        return [
-            DatasetType(
-                id=UUID(d["id"]),
-                file_name=d["file_name"],
-                created_at=datetime.fromisoformat(d["created_at"]),
-                row_schema=d["row_schema"],
-            )
-            for d in datasets
-        ]
+        """List all locally stored datasets."""
+        conn = info.context["db"]
+        datasets = await db.list_datasets(conn)
+        return [_dataset_to_type(d) for d in datasets]
 
     @strawberry.field
     async def get_dataset(self, info: Info, id: UUID) -> DatasetType | None:
-        """Get a dataset by ID.
-
-        Args:
-            id: UUID of the dataset.
-
-        Returns:
-            The dataset, or None if not found.
-        """
-        from pixie_sdk.db import get_db, get_dataset
-
-        db = await get_db()
-        dataset = await get_dataset(db, id)
-        await db.close()
-
+        """Get a dataset by ID."""
+        conn = info.context["db"]
+        dataset = await db.get_dataset(conn, id)
         if not dataset:
             return None
-
-        return DatasetType(
-            id=UUID(dataset["id"]),
-            file_name=dataset["file_name"],
-            created_at=datetime.fromisoformat(dataset["created_at"]),
-            row_schema=dataset["row_schema"],
-        )
+        return _dataset_to_type(dataset)
 
     @strawberry.field
     async def get_data_entries(
@@ -147,49 +162,18 @@ class Query:
         offset: int = 0,
         limit: int = 100,
     ) -> list[DataEntryType]:
-        """Get paginated data entries for a dataset.
-
-        Args:
-            dataset_id: UUID of the parent dataset.
-            offset: Number of entries to skip.
-            limit: Maximum entries to return.
-
-        Returns:
-            List of data entries.
-        """
-        from pixie_sdk.db import get_db, get_data_entries
-
-        db = await get_db()
-        entries = await get_data_entries(
-            db, dataset_id=dataset_id, offset=offset, limit=limit
+        """Get paginated data entries for a dataset."""
+        conn = info.context["db"]
+        entries = await db.get_data_entries(
+            conn, dataset_id=dataset_id, offset=offset, limit=limit
         )
-        await db.close()
-
-        return [
-            DataEntryType(
-                id=UUID(e["id"]),
-                dataset_id=UUID(e["dataset_id"]),
-                data=e["data"],
-            )
-            for e in entries
-        ]
+        return [_entry_to_type(e) for e in entries]
 
     @strawberry.field
     async def data_entry_count(self, info: Info, dataset_id: UUID) -> int:
-        """Count data entries in a dataset.
-
-        Args:
-            dataset_id: UUID of the parent dataset.
-
-        Returns:
-            Number of entries.
-        """
-        from pixie_sdk.db import get_db, count_data_entries
-
-        db = await get_db()
-        count = await count_data_entries(db, dataset_id)
-        await db.close()
-        return count
+        """Count data entries in a dataset."""
+        conn = info.context["db"]
+        return await db.count_data_entries(conn, dataset_id)
 
     @strawberry.field
     async def render_labeling_ui(
@@ -207,27 +191,24 @@ class Query:
         Returns:
             HTML string rendered from the Jinja2 template.
         """
-        import json
-        from pathlib import Path
-
         from jinja2 import Environment, FileSystemLoader
 
-        from pixie_sdk.db import get_db, get_data_entry
-
-        db = await get_db()
-        entry = await get_data_entry(db, entry_id)
-        await db.close()
+        conn = info.context["db"]
+        entry = await db.get_data_entry(conn, entry_id)
 
         if not entry:
             return "<html><body><h1>Entry not found</h1></body></html>"
 
         templates_dir = Path(__file__).parent / "templates"
-        env = Environment(loader=FileSystemLoader(templates_dir))
-        template = template_name or "default.html"
+        env = Environment(
+            loader=FileSystemLoader(templates_dir),
+            autoescape=True,
+        )
+        tpl_name = template_name or "default.html"
 
         try:
-            tmpl = env.get_template(template)
-            return tmpl.render(entry=entry)
+            tmpl = env.get_template(tpl_name)
+            return tmpl.render(entry_id=entry_id, data=entry["data"])
         except Exception:
             data_json = json.dumps(entry["data"], indent=2)
             return f"<html><body><pre>{data_json}</pre></body></html>"
@@ -246,44 +227,52 @@ class Mutation:
     async def upload_file(
         self,
         info: Info,
-        file_name: str,
-        file_path: str,
+        file: Upload,
     ) -> DatasetType:
         """Upload and ingest a data file into a local dataset.
 
-        The file is loaded, a JSON schema is inferred, each row
-        is assigned a UUID, and everything is stored in SQLite.
+        The file is received via the GraphQL multipart request spec,
+        written to a temp file, then ingested.
 
         Args:
-            file_name: Original file name.
-            file_path: Temporary path where the file was uploaded.
+            file: The uploaded file (Upload scalar).
 
         Returns:
             The created dataset object.
         """
-        from pixie_sdk.db import create_data_entries, create_dataset, get_db
-        from pixie_sdk.ingest import infer_schema, load_to_rows
+        conn = info.context["db"]
+        file_name = file.filename or "uploaded_file"  # type: ignore[attr-defined]
+        data = await file.read()  # type: ignore[attr-defined]
 
-        # Load and infer schema
-        rows = load_to_rows(file_path)
-        row_schema = infer_schema(rows)
+        # Write to temp file preserving extension for load_to_rows
+        suffix = os.path.splitext(file_name)[1]
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(data)
+                tmp_path = tmp.name
 
-        # Create dataset record
-        db = await get_db()
-        dataset_id = await create_dataset(
-            db, file_name=file_name, row_schema=row_schema
-        )
+            # Parse and infer schema
+            rows = ingest.load_to_rows(tmp_path)
+            row_schema = ingest.infer_schema(rows)
 
-        # Insert data entries
-        await create_data_entries(db, dataset_id=dataset_id, rows=rows)
-        await db.close()
+            # Create dataset record
+            dataset_id = await db.create_dataset(
+                conn, file_name=file_name, row_schema=row_schema
+            )
 
-        return DatasetType(
-            id=dataset_id,
-            file_name=file_name,
-            created_at=datetime.now(),
-            row_schema=row_schema,
-        )
+            # Insert data entries
+            await db.create_data_entries(conn, dataset_id=dataset_id, rows=rows)
+
+            return DatasetType(
+                id=dataset_id,
+                file_name=file_name,
+                created_at=datetime.now(),
+                row_schema=row_schema,  # type: ignore[arg-type]
+            )
+        finally:
+            if tmp_path:
+                os.unlink(tmp_path)
 
     @strawberry.mutation
     async def delete_dataset(self, info: Info, id: UUID) -> bool:
@@ -295,12 +284,10 @@ class Mutation:
         Returns:
             True if deleted successfully.
         """
-        from pixie_sdk.db import get_db
-
-        db = await get_db()
-        await db.execute("DELETE FROM datasets WHERE id = ?", (str(id),))
-        await db.commit()
-        await db.close()
+        conn = info.context["db"]
+        await conn.execute("DELETE FROM data_entries WHERE dataset_id = ?", (str(id),))
+        await conn.execute("DELETE FROM datasets WHERE id = ?", (str(id),))
+        await conn.commit()
         return True
 
 
@@ -327,8 +314,6 @@ class Subscription:
         2. Batch-embed all data entries with OpenAI
         3. Upload embedded test cases to the remote server in batches
 
-        Progress updates are yielded at each step.
-
         Args:
             dataset_id: UUID of the local dataset to use.
             input: Test suite creation parameters.
@@ -336,13 +321,9 @@ class Subscription:
         Yields:
             TestSuiteCreationProgress updates.
         """
-        import os
-
-        from pixie_sdk.db import get_data_entries, get_db
-        from pixie_sdk.embed import embed_batch
         from pixie_sdk.remote_client import RemoteClient
 
-        BATCH_SIZE = 100
+        test_suite_id: UUID | None = None
 
         try:
             # Step 1: Create test suite on remote server
@@ -361,31 +342,30 @@ class Subscription:
                 name=input.name,
                 description=input.description,
                 metric_ids=input.metric_ids,
-                input_schema=input.input_schema,
+                input_schema=input.input_schema,  # type: ignore[arg-type]
             )
 
             yield TestSuiteCreationProgress(
-                status=CreationStatus.EMBEDDING,
-                message="Test suite created. Starting embedding...",
+                status=CreationStatus.CREATING,
+                message="Test suite created",
                 progress=0.1,
                 test_suite_id=test_suite_id,
             )
 
             # Step 2: Get all data entries and embed them
-            db = await get_db()
-            all_entries = await get_data_entries(
-                db, dataset_id=dataset_id, offset=0, limit=10000
+            conn = info.context["db"]
+            all_entries = await db.get_data_entries(
+                conn, dataset_id=dataset_id, offset=0, limit=999999
             )
-            await db.close()
 
             total_entries = len(all_entries)
-            embedded_cases = []
+            embedded_cases: list[dict[str, Any]] = []
 
-            for i in range(0, total_entries, BATCH_SIZE):
-                batch = all_entries[i : i + BATCH_SIZE]
+            for i in range(0, total_entries, EMBED_BATCH_SIZE):
+                batch = all_entries[i : i + EMBED_BATCH_SIZE]
                 batch_data = [entry["data"] for entry in batch]
 
-                embeddings = await embed_batch(batch_data)
+                embeddings = await embed.embed_batch(batch_data)
 
                 for entry, embedding in zip(batch, embeddings):
                     embedded_cases.append(
@@ -396,30 +376,32 @@ class Subscription:
                         }
                     )
 
-                progress = 0.1 + 0.6 * (i + len(batch)) / total_entries
+                progress = 0.1 + 0.5 * (i + len(batch)) / total_entries
+                batch_num = (i // EMBED_BATCH_SIZE) + 1
+                total_batches = (
+                    total_entries + EMBED_BATCH_SIZE - 1
+                ) // EMBED_BATCH_SIZE
                 yield TestSuiteCreationProgress(
                     status=CreationStatus.EMBEDDING,
-                    message=f"Embedded {i + len(batch)}/{total_entries} test cases...",
+                    message=f"Embedding batch {batch_num}/{total_batches}",
                     progress=progress,
                     test_suite_id=test_suite_id,
                 )
 
             # Step 3: Upload test cases to remote server in batches
-            yield TestSuiteCreationProgress(
-                status=CreationStatus.UPLOADING,
-                message="Uploading test cases to remote server...",
-                progress=0.7,
-                test_suite_id=test_suite_id,
-            )
-
-            for i in range(0, len(embedded_cases), BATCH_SIZE):
-                batch = embedded_cases[i : i + BATCH_SIZE]
+            total_cases = len(embedded_cases)
+            for i in range(0, total_cases, UPLOAD_BATCH_SIZE):
+                batch = embedded_cases[i : i + UPLOAD_BATCH_SIZE]
                 await client.add_test_cases(test_suite_id, batch)
 
-                progress = 0.7 + 0.3 * (i + len(batch)) / len(embedded_cases)
+                progress = 0.6 + 0.4 * (i + len(batch)) / total_cases
+                batch_num = (i // UPLOAD_BATCH_SIZE) + 1
+                total_batches = (
+                    total_cases + UPLOAD_BATCH_SIZE - 1
+                ) // UPLOAD_BATCH_SIZE
                 yield TestSuiteCreationProgress(
                     status=CreationStatus.UPLOADING,
-                    message=f"Uploaded {i + len(batch)}/{len(embedded_cases)} test cases...",
+                    message=f"Uploading batch {batch_num}/{total_batches}",
                     progress=progress,
                     test_suite_id=test_suite_id,
                 )
@@ -427,7 +409,7 @@ class Subscription:
             # Complete
             yield TestSuiteCreationProgress(
                 status=CreationStatus.COMPLETE,
-                message=f"Successfully created test suite with {total_entries} test cases!",
+                message=f"Test suite created successfully with {total_entries} test cases!",
                 progress=1.0,
                 test_suite_id=test_suite_id,
             )
@@ -437,6 +419,7 @@ class Subscription:
                 status=CreationStatus.ERROR,
                 message=f"Error: {str(e)}",
                 progress=0.0,
+                test_suite_id=test_suite_id,
             )
 
 

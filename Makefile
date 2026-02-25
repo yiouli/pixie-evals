@@ -1,4 +1,4 @@
-.PHONY: dev dev-sdk dev-frontend install install-sdk install-frontend test test-sdk lint codegen
+.PHONY: dev dev-sdk dev-frontend install install-sdk install-frontend test test-sdk lint codegen build build-frontend build-sdk publish
 
 # ============================================================================
 # Development
@@ -51,3 +51,18 @@ codegen-sdk:  ## Generate SDK remote client from pixie-server schema
 
 codegen-frontend:  ## Generate frontend GraphQL types
 	cd frontend && pnpm codegen
+
+# ============================================================================
+# Build & Publish
+# ============================================================================
+
+build: build-frontend build-sdk  ## Build frontend and SDK package for publishing
+
+build-frontend:  ## Build frontend SPA into sdk/pixie_sdk/dist/
+	cd frontend && pnpm build
+
+build-sdk:  ## Build SDK Python wheel (requires build-frontend first)
+	cd sdk && uv build
+
+publish: build  ## Build and publish the SDK package to PyPI
+	cd sdk && uv publish

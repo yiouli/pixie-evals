@@ -17,8 +17,7 @@ from genson import SchemaBuilder
 def load_to_rows(path: str) -> list[dict[str, Any]]:
     """Load a data file into a list of row dicts.
 
-    Supports JSON, JSONL, CSV, and Parquet formats. Falls back to
-    HuggingFace datasets for other formats.
+    Supports JSON, JSONL, CSV, and Parquet formats.
 
     Args:
         path: Path to the data file.
@@ -27,31 +26,32 @@ def load_to_rows(path: str) -> list[dict[str, Any]]:
         List of dicts, one per row.
 
     Raises:
-        ValueError: If the file format cannot be determined or loaded.
+        ValueError: If the file format is unsupported or the dataset is empty.
     """
     mime = magic.from_file(path, mime=True)
+    rows: list[dict[str, Any]]
 
     if "json" in mime or path.endswith((".json", ".jsonl")):
         with open(path) as f:
             content = f.read().strip()
             if content.startswith("["):
-                return json.loads(content)
+                rows = json.loads(content)
             else:  # JSONL
-                return [json.loads(line) for line in content.splitlines() if line]
-
-    elif path.endswith(".parquet"):
-        return pl.read_parquet(path).to_dicts()
+                rows = [json.loads(line) for line in content.splitlines() if line]
 
     elif path.endswith(".csv"):
-        return pl.read_csv(path).to_dicts()
+        rows = pl.read_csv(path).to_dicts()
 
-    # fallback: try HuggingFace datasets
-    try:
-        from datasets import load_dataset
+    elif path.endswith(".parquet"):
+        rows = pl.read_parquet(path).to_dicts()
 
-        return list(load_dataset(path)["train"])
-    except Exception as e:
-        raise ValueError(f"Unable to load file {path}: {e}") from e
+    else:
+        raise ValueError(f"Unsupported file format: {path}")
+
+    if not rows:
+        raise ValueError("Empty dataset")
+
+    return rows
 
 
 def infer_schema(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -64,8 +64,14 @@ def infer_schema(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     Returns:
         A JSON Schema dict describing the row structure.
+
+    Raises:
+        ValueError: If the rows list is empty.
     """
+    if not rows:
+        raise ValueError("Cannot infer schema from empty data")
+
     builder = SchemaBuilder()
     for row in rows:
         builder.add_object(row)
-    return builder.to_schema()
+    return dict(builder.to_schema())

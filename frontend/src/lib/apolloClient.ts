@@ -1,15 +1,27 @@
-import { ApolloClient, InMemoryCache, HttpLink, split } from "@apollo/client";
+import { ApolloClient, InMemoryCache, HttpLink, split, ApolloLink } from "@apollo/client";
 import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { createClient } from "graphql-ws";
+import { useAuthStore } from "./store";
 
-// Remote pixie-server client
+// Auth middleware — attaches JWT to every remote-server request
+const authLink = new ApolloLink((operation, forward) => {
+  const token = useAuthStore.getState().token;
+  if (token) {
+    operation.setContext({
+      headers: { authorization: `Bearer ${token}` },
+    });
+  }
+  return forward(operation);
+});
+
+// Remote pixie-server client (with auth)
 const remoteHttpLink = new HttpLink({
   uri: "http://localhost:8000/graphql",
 });
 
 export const remoteClient = new ApolloClient({
-  link: remoteHttpLink,
+  link: authLink.concat(remoteHttpLink),
   cache: new InMemoryCache(),
 });
 

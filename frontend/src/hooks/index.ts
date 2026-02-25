@@ -3,3 +3,4 @@ export * from "./useTestSuites";
 export * from "./useMetrics";
 export * from "./useEvaluation";
 export * from "./useDatasetUpload";
+export * from "./useDatasets";

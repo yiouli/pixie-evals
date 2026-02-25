@@ -70,21 +70,28 @@ pixie-evals/
         ├── lib/
         │   ├── apolloClient.ts # Dual Apollo clients (remote + SDK)
         │   ├── theme.ts        # MUI theme
-        │   └── store.ts        # Zustand state stores
+        │   └── store.ts        # Zustand state stores (auth, dataset, test suite)
         ├── hooks/
-        │   ├── useAuth.ts
-        │   ├── useTestSuites.ts
-        │   ├── useMetrics.ts
-        │   ├── useEvaluation.ts
-        │   └── useDatasetUpload.ts
+        │   ├── index.ts            # Barrel export for all hooks
+        │   ├── useAuth.ts          # Login/logout with JWT persistence
+        │   ├── useTestSuites.ts    # Test suite CRUD (Zustand store-backed)
+        │   ├── useMetrics.ts       # Metric operations (stub)
+        │   ├── useEvaluation.ts    # Evaluation state (stub)
+        │   ├── useDatasets.ts      # List datasets from SDK server
+        │   └── useDatasetUpload.ts # Multipart file upload to SDK server
         ├── components/
-        │   ├── Login.tsx
-        │   ├── FileUpload.tsx
-        │   ├── TestSuiteCreation.tsx
-        │   ├── MetricCreationModal.tsx
-        │   ├── EvaluationView.tsx
-        │   ├── LabelingModal.tsx
-        │   └── TestCaseDataGrid.tsx
+        │   ├── SelectionView.tsx       # Landing page — tabbed grid of test suites & datasets
+        │   ├── DatasetView.tsx         # Dataset detail — editable name, schema, paginated data
+        │   ├── TestSuiteView.tsx       # Test suite detail — metrics, test cases, actions
+        │   ├── SignInModal.tsx          # Auth modal overlay (JWT via remote server)
+        │   ├── DatasetUploadDialog.tsx  # Drag-and-drop file upload dialog
+        │   ├── TestSuiteConfigDialog.tsx# Create test suite — name, metrics, dataset
+        │   ├── ManualLabelingDialog.tsx # SDK iframe + per-metric rating + notes
+        │   ├── EvaluationDialog.tsx     # AI evaluation progress shell
+        │   ├── EditableText.tsx         # Click-to-edit text component
+        │   ├── MetricEditor.tsx         # Metric list editor (scale/category types)
+        │   ├── ArrayEditor.tsx          # Generic sortable list editor with DnD
+        │   └── TestCaseDataGrid.tsx     # Paginated DataGrid with auto-detected columns
         ├── graphql/
         │   ├── remote/         # Operations for pixie-server
         │   │   └── operations.graphql
@@ -124,6 +131,12 @@ make dev-frontend
 # Run SDK tests
 make test-sdk
 
+# Run frontend tests
+cd frontend && pnpm test
+
+# Type check frontend
+cd frontend && pnpm typecheck
+
 # Type check SDK
 make lint
 
@@ -148,4 +161,5 @@ make codegen
 - **React Router** — client-side routing
 - **Zustand** — state management
 - **MUI** (Material UI) — component library
-- **CodeMirror** — code/JSON editor
+- **@dnd-kit** — drag-and-drop for sortable lists
+- **Vitest** + **@testing-library/react** — unit testing

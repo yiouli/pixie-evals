@@ -10,6 +10,9 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+# OpenAI supports up to 2048 inputs per embedding call
+MAX_BATCH_SIZE = 2048
+
 
 def _get_client() -> AsyncOpenAI:
     """Get or create the OpenAI client."""
@@ -24,6 +27,7 @@ async def embed_batch(
     """Embed a batch of data rows using OpenAI's text embedding API.
 
     Each row is serialized to a JSON string before embedding.
+    If there are more than 2048 rows, the batch is split into chunks.
 
     Args:
         rows: List of data row dicts to embed.
@@ -38,10 +42,18 @@ async def embed_batch(
     try:
         client = _get_client()
         texts = [json.dumps(row, sort_keys=True) for row in rows]
-        response = await client.embeddings.create(input=texts, model=model)
-        return [item.embedding for item in response.data]
+
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), MAX_BATCH_SIZE):
+            chunk = texts[i : i + MAX_BATCH_SIZE]
+            response = await client.embeddings.create(input=chunk, model=model)
+            all_embeddings.extend(item.embedding for item in response.data)
+
+        return all_embeddings
+    except RuntimeError:
+        raise
     except Exception as e:
-        raise RuntimeError(f"OpenAI embedding failed: {e}") from e
+        raise RuntimeError(f"Embedding failed: {e}") from e
 
 
 async def embed_single(

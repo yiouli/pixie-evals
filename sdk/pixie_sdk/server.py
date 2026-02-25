@@ -1,21 +1,26 @@
 """FastAPI server for the Pixie SDK.
 
 Serves the local Strawberry GraphQL API for dataset management,
-a REST endpoint for file uploads, and Jinja2-rendered labeling UIs.
+Jinja2-rendered labeling UIs, and proxies to the remote pixie-server.
 The server runs on the user's local machine — raw data never leaves.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, FileSystemLoader
 from strawberry.fastapi import GraphQLRouter
 
+from pixie_sdk import db
 from pixie_sdk.graphql import schema
 
 # ============================================================================
@@ -24,6 +29,23 @@ from pixie_sdk.graphql import schema
 
 SDK_PORT = int(os.environ.get("PIXIE_SDK_PORT", "8100"))
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "dist"
+
+_jinja_env = Environment(
+    loader=FileSystemLoader(TEMPLATES_DIR),
+    autoescape=True,
+)
+
+
+# ============================================================================
+# Context
+# ============================================================================
+
+
+async def get_context() -> dict:
+    """Provide a DB connection to all GraphQL resolvers."""
+    conn = await db.get_db()
+    return {"db": conn}
 
 
 # ============================================================================
@@ -34,13 +56,9 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler — initialise DB on startup."""
-    # Startup: ensure SQLite schema exists
-    from pixie_sdk.db import get_db
-
-    db = await get_db()
-    await db.close()
+    conn = await db.get_db()
+    await conn.close()
     yield
-    # Shutdown: cleanup if needed
 
 
 # ============================================================================
@@ -66,8 +84,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount Strawberry GraphQL (queries, mutations, subscriptions)
-graphql_app = GraphQLRouter(schema)
+# Mount Strawberry GraphQL with multipart upload support
+graphql_app = GraphQLRouter(
+    schema,
+    context_getter=get_context,  # type: ignore[arg-type]
+    multipart_uploads_enabled=True,
+)
 app.include_router(graphql_app, prefix="/graphql")
 
 
@@ -82,34 +104,6 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/upload")
-async def upload_file(file: UploadFile) -> dict[str, str]:
-    """Upload a data file for ingestion.
-
-    Saves the uploaded file to a temp directory and returns the
-    temp path so the GraphQL mutation can ingest it.
-
-    Args:
-        file: The uploaded file.
-
-    Returns:
-        Dict with ``file_name`` and ``file_path``.
-    """
-    import tempfile
-    from pathlib import Path
-
-    temp_dir = Path(tempfile.gettempdir()) / "pixie_uploads"
-    temp_dir.mkdir(exist_ok=True)
-
-    file_path = temp_dir / (file.filename or "uploaded_file")
-    content = await file.read()
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    return {"file_name": file.filename or "uploaded_file", "file_path": str(file_path)}
-
-
 @app.get("/labeling-ui/{entry_id}", response_class=HTMLResponse)
 async def labeling_ui(entry_id: str, template: str | None = None) -> str:
     """Render the labeling UI for a data entry as HTML.
@@ -122,31 +116,35 @@ async def labeling_ui(entry_id: str, template: str | None = None) -> str:
 
     Returns:
         Rendered HTML string.
+
+    Raises:
+        HTTPException: 404 if entry not found.
     """
-    from uuid import UUID
-    from jinja2 import Environment, FileSystemLoader
-
-    from pixie_sdk.db import get_db, get_data_entry
-
-    db = await get_db()
-    entry = await get_data_entry(db, UUID(entry_id))
-    await db.close()
+    conn = await db.get_db()
+    entry = await db.get_data_entry(conn, UUID(entry_id))
+    await conn.close()
 
     if not entry:
-        return "<html><body><h1>Entry not found</h1></body></html>"
+        raise HTTPException(status_code=404, detail="Entry not found")
 
-    env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
-    template_name = template or "default.html"
+    tpl_name = template or "default.html"
 
     try:
-        tmpl = env.get_template(template_name)
-        return tmpl.render(entry=entry)
+        tmpl = _jinja_env.get_template(tpl_name)
+        return tmpl.render(entry_id=entry_id, data=entry["data"])
     except Exception:
-        # Fallback to a simple JSON display
-        import json
-
         data_json = json.dumps(entry["data"], indent=2)
         return f"<html><body><pre>{data_json}</pre></body></html>"
+
+
+# ============================================================================
+# SPA Static Files
+# ============================================================================
+
+# Mount the frontend SPA at '/' — must come LAST so API routes take priority.
+# StaticFiles with html=True serves index.html for any unmatched path (SPA routing).
+if STATIC_DIR.exists():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="spa")
 
 
 # ============================================================================

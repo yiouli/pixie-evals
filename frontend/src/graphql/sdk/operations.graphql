@@ -26,8 +26,8 @@ query GetDataEntries($datasetId: UUID!, $offset: Int, $limit: Int) {
   }
 }
 
-mutation UploadFile($fileName: String!, $filePath: String!) {
-  uploadFile(fileName: $fileName, filePath: $filePath) {
+mutation UploadFile($file: Upload!) {
+  uploadFile(file: $file) {
     id
     fileName
     createdAt
