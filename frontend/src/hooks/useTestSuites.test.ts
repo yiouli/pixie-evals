@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTestSuites } from "./useTestSuites";
+import { useAuthStore } from "../lib/store";
 
 // Mock Apollo Client
 const mockQuery = vi.fn();
@@ -26,12 +27,24 @@ vi.mock("../lib/apolloClient", () => ({
 describe("useTestSuites", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set authenticated state so queries fire
+    useAuthStore.setState({ isAuthenticated: true, token: "test-token", username: "testuser" });
     mockQuery.mockReturnValue({
       data: { listTestSuites: [] },
       loading: false,
       error: undefined,
       refetch: vi.fn(),
     });
+  });
+
+  it("should skip query when not authenticated", () => {
+    useAuthStore.setState({ isAuthenticated: false, token: null, username: null });
+    renderHook(() => useTestSuites());
+    // Verify useQuery was called with skip: true
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ skip: true }),
+    );
   });
 
   it("should start with empty test suites when query returns empty", () => {

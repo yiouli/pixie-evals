@@ -1,5 +1,6 @@
 import { useQuery } from "@apollo/client";
 import { remoteClient } from "../lib/apolloClient";
+import { useAuthStore } from "../lib/store";
 import { LIST_TEST_SUITES } from "../graphql/remote/query";
 import { CREATE_TEST_SUITE } from "../graphql/remote/mutation";
 import type { MetricConfig } from "../components/MetricEditor";
@@ -25,8 +26,11 @@ export interface CreateTestSuiteInput {
  * mutation to create new ones.
  */
 export function useTestSuites() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
   const { data, loading, error, refetch } = useQuery(LIST_TEST_SUITES, {
     client: remoteClient,
+    skip: !isAuthenticated,
   });
 
   const createTestSuite = async (

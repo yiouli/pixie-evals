@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useQuery, useMutation } from "@apollo/client";
 import { remoteClient } from "../lib/apolloClient";
+import { useAuthStore } from "../lib/store";
 import {
   LIST_TEST_CASE_IDS,
   GET_TEST_CASES_WITH_LABEL,
@@ -30,6 +31,7 @@ export interface MetricLabelValue {
  * for a specific test suite.
  */
 export function useEvaluation(testSuiteId: string) {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
@@ -42,7 +44,7 @@ export function useEvaluation(testSuiteId: string) {
   } = useQuery(LIST_TEST_CASE_IDS, {
     client: remoteClient,
     variables: { filters: { testSuiteIds: [testSuiteId] } },
-    skip: !testSuiteId,
+    skip: !testSuiteId || !isAuthenticated,
   });
 
   const allIds: string[] = useMemo(
@@ -75,7 +77,7 @@ export function useEvaluation(testSuiteId: string) {
     {
       client: remoteClient,
       variables: { testSuiteId, count: 1 },
-      skip: !testSuiteId,
+      skip: !testSuiteId || !isAuthenticated,
     },
   );
 

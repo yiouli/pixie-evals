@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@apollo/client";
 import { remoteClient } from "../lib/apolloClient";
+import { useAuthStore } from "../lib/store";
 import { LIST_METRICS } from "../graphql/remote/query";
 import { CREATE_METRIC } from "../graphql/remote/mutation";
 import type { ListMetricsQuery } from "../generated/remote/graphql";
@@ -25,8 +26,11 @@ export interface CreateMetricInput {
  * creating metrics.
  */
 export function useMetrics() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
   const { data, loading, error, refetch } = useQuery(LIST_METRICS, {
     client: remoteClient,
+    skip: !isAuthenticated,
   });
 
   const [createMetricMutation] = useMutation(CREATE_METRIC, {
