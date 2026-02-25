@@ -1,9 +1,0 @@
-# Remote Server GraphQL Operations (pixie-server)
-
-# TODO: Add operations for remote server once schema is available
-# Examples:
-# - getAuthToken
-# - listMetrics
-# - createMetric
-# - getTestSuite
-# - listTestSuites

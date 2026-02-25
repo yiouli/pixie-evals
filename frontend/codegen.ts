@@ -13,16 +13,20 @@ const config: CodegenConfig = {
     // Remote server types & hooks
     "src/generated/remote/": {
       schema: "http://localhost:8000/graphql",
-      documents: "src/graphql/remote/**/*.graphql",
+      documents: "src/graphql/remote/**/*.ts",
       preset: "client",
-      plugins: [],
+      presetConfig: {
+        fragmentMasking: false,
+      },
     },
     // Local SDK server types & hooks
     "src/generated/sdk/": {
       schema: "http://localhost:8100/graphql",
-      documents: "src/graphql/sdk/**/*.graphql",
+      documents: "src/graphql/sdk/**/*.ts",
       preset: "client",
-      plugins: [],
+      presetConfig: {
+        fragmentMasking: false,
+      },
     },
   },
 };

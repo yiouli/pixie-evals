@@ -1,13 +1,9 @@
 import { useState, useCallback } from "react";
 import { useDatasetStore } from "../lib/store";
+import type { UploadFileMutation } from "../generated/sdk/graphql";
 
-/** Dataset returned by the uploadFile mutation. */
-export interface UploadedDataset {
-  id: string;
-  fileName: string;
-  createdAt: string;
-  rowSchema: unknown;
-}
+/** Dataset type as returned by the UploadFile mutation. */
+type UploadedDataset = UploadFileMutation["uploadFile"];
 
 /**
  * Hook for uploading a dataset file to the local SDK server.
@@ -15,6 +11,9 @@ export interface UploadedDataset {
  * Sends a single GraphQL multipart request per the
  * https://github.com/jaydenseric/graphql-multipart-request-spec spec.
  * No separate REST endpoint or extra dependencies needed.
+ *
+ * Uses the generated `UploadFileMutation` type from GraphQL Codegen
+ * for the response shape.
  *
  * Returns the uploaded dataset from `uploadFile` so callers can act
  * on success without watching state changes.

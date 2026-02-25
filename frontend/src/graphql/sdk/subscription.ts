@@ -1,0 +1,12 @@
+import { graphql } from "../../generated/sdk/gql";
+
+export const CREATE_TEST_SUITE_PROGRESS = graphql(`
+  subscription CreateTestSuiteProgress($datasetId: UUID!, $input: TestSuiteCreateInput!) {
+    createTestSuiteProgress(datasetId: $datasetId, input: $input) {
+      status
+      message
+      progress
+      testSuiteId
+    }
+  }
+`);

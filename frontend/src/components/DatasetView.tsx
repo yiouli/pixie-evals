@@ -16,44 +16,11 @@ import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { DataGrid, type GridColDef, type GridRenderCellParams } from "@mui/x-data-grid";
-import { gql, useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client";
 import { sdkClient } from "../lib/apolloClient";
+import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { EditableText } from "./EditableText";
 import { TestSuiteConfigDialog } from "./TestSuiteConfigDialog";
-
-const GET_DATASET = gql`
-  query GetDataset($id: UUID!) {
-    getDataset(id: $id) {
-      id
-      fileName
-      createdAt
-      rowSchema
-    }
-  }
-`;
-
-const GET_DATA_ENTRIES = gql`
-  query GetDataEntries($datasetId: UUID!, $offset: Int, $limit: Int) {
-    getDataEntries(datasetId: $datasetId, offset: $offset, limit: $limit) {
-      id
-      datasetId
-      data
-    }
-  }
-`;
-
-interface Dataset {
-  id: string;
-  fileName: string;
-  createdAt: string;
-  rowSchema: Record<string, unknown> | string;
-}
-
-interface DataEntry {
-  id: string;
-  datasetId: string;
-  data: Record<string, unknown>;
-}
 
 /**
  * Dataset detail view.
@@ -73,19 +40,20 @@ export function DatasetView() {
     data: datasetData,
     loading: datasetLoading,
     error: datasetError,
-  } = useQuery<{ getDataset: Dataset }>(GET_DATASET, {
+  } = useQuery(GET_DATASET, {
     client: sdkClient,
-    variables: { id: datasetId },
+    variables: { id: datasetId! },
     skip: !datasetId,
   });
 
-  const { data: entriesData, loading: entriesLoading } = useQuery<{
-    getDataEntries: DataEntry[];
-  }>(GET_DATA_ENTRIES, {
-    client: sdkClient,
-    variables: { datasetId, offset: 0, limit: 100 },
-    skip: !datasetId,
-  });
+  const { data: entriesData, loading: entriesLoading } = useQuery(
+    GET_DATA_ENTRIES,
+    {
+      client: sdkClient,
+      variables: { datasetId: datasetId!, offset: 0, limit: 100 },
+      skip: !datasetId,
+    },
+  );
 
   const dataset = datasetData?.getDataset;
   const entries = entriesData?.getDataEntries ?? [];

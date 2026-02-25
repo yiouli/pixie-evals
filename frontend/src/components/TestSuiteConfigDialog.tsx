@@ -16,40 +16,14 @@ import {
   Divider,
   Paper,
 } from "@mui/material";
-import { gql, useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { sdkClient } from "../lib/apolloClient";
+import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
 import { MetricEditor, type MetricConfig, createEmptyMetric } from "./MetricEditor";
-
-const GET_DATASET = gql`
-  query GetDatasetForConfig($id: UUID!) {
-    getDataset(id: $id) {
-      id
-      fileName
-      createdAt
-      rowSchema
-    }
-  }
-`;
-
-const GET_DATA_ENTRIES = gql`
-  query GetDataEntriesForConfig($datasetId: UUID!, $offset: Int, $limit: Int) {
-    getDataEntries(datasetId: $datasetId, offset: $offset, limit: $limit) {
-      id
-      datasetId
-      data
-    }
-  }
-`;
-
-interface DataEntry {
-  id: string;
-  datasetId: string;
-  data: Record<string, unknown>;
-}
 
 interface TestSuiteConfigDialogProps {
   open: boolean;
@@ -85,22 +59,21 @@ export function TestSuiteConfigDialog({
   const { createTestSuite } = useTestSuites();
 
   // Fetch selected dataset details
-  const { data: datasetData } = useQuery<{
-    getDataset: { rowSchema: Record<string, unknown> | string };
-  }>(GET_DATASET, {
+  const { data: datasetData } = useQuery(GET_DATASET, {
     client: sdkClient,
-    variables: { id: selectedDatasetId },
+    variables: { id: selectedDatasetId! },
     skip: !selectedDatasetId,
   });
 
   // Fetch preview entries for selected dataset
-  const { data: entriesData, loading: entriesLoading } = useQuery<{
-    getDataEntries: DataEntry[];
-  }>(GET_DATA_ENTRIES, {
-    client: sdkClient,
-    variables: { datasetId: selectedDatasetId, offset: 0, limit: 10 },
-    skip: !selectedDatasetId,
-  });
+  const { data: entriesData, loading: entriesLoading } = useQuery(
+    GET_DATA_ENTRIES,
+    {
+      client: sdkClient,
+      variables: { datasetId: selectedDatasetId!, offset: 0, limit: 10 },
+      skip: !selectedDatasetId,
+    },
+  );
 
   useEffect(() => {
     if (preselectedDatasetId) {

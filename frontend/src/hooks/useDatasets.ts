@@ -1,34 +1,15 @@
-import { gql, useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client";
 import { sdkClient } from "../lib/apolloClient";
-
-const LIST_DATASETS = gql`
-  query ListDatasets {
-    listDatasets {
-      id
-      fileName
-      createdAt
-      rowSchema
-    }
-  }
-`;
-
-/** Shape of a dataset returned by the SDK server. */
-export interface Dataset {
-  id: string;
-  fileName: string;
-  createdAt: string;
-  rowSchema: Record<string, unknown> | string;
-}
-
-interface ListDatasetsData {
-  listDatasets: Dataset[];
-}
+import { LIST_DATASETS } from "../graphql/sdk/query";
 
 /**
  * Hook for fetching the list of datasets from the local SDK server.
+ *
+ * Uses the `LIST_DATASETS` typed document node defined in
+ * `graphql/sdk/query.ts` for full type safety via GraphQL Codegen.
  */
 export function useDatasets() {
-  const { data, loading, error, refetch } = useQuery<ListDatasetsData>(
+  const { data, loading, error, refetch } = useQuery(
     LIST_DATASETS,
     { client: sdkClient },
   );

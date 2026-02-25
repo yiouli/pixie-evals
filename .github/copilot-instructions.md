@@ -41,9 +41,13 @@ frontend/
     generated/             # Auto-generated code from GraphQL Codegen (never edit manually)
       remote/              # Types from remote pixie-server schema
       sdk/                 # Types from local SDK server schema
-    graphql/               # Raw GraphQL operation documents
+    graphql/               # GraphQL operation documents (.ts files using graphql() function)
       remote/              # Operations against remote pixie-server
+        mutation.ts        # Remote mutations (e.g., GET_AUTH_TOKEN)
       sdk/                 # Operations against local SDK server
+        query.ts           # SDK queries (e.g., LIST_DATASETS, GET_DATASET)
+        mutation.ts        # SDK mutations (e.g., UPLOAD_FILE)
+        subscription.ts    # SDK subscriptions (e.g., CREATE_TEST_SUITE_PROGRESS)
     hooks/                 # Custom React hooks
       index.ts             # Barrel export for all hooks
     lib/                   # Non-React utilities, store, config, pure functions
@@ -175,17 +179,108 @@ export function RatingButtonsGroup({ size = "medium", ratingDetails, setRatingDe
 
 ### GraphQL Operations
 
-1. **Define operations** in `graphql/remote/*.graphql` and `graphql/sdk/*.graphql`.
-2. **Generate types** with `pnpm codegen` — this populates `generated/`.
-3. **Use generated types** in components/hooks for full type safety.
-4. **Apollo Client instances** are defined in `lib/apolloClient.ts` — one per server (remote, SDK).
-5. **Use Apollo hooks** (`useQuery`, `useMutation`, `useSubscription`) in custom hooks or components, not raw `client.query()`.
+Operations are defined in **TypeScript files** under `graphql/` using the `graphql()` function from the generated code. This is the same pattern used in pixie-ui/app-runner.
+
+1. **Define operations** in `graphql/sdk/query.ts`, `graphql/sdk/mutation.ts`, `graphql/sdk/subscription.ts` (or `graphql/remote/mutation.ts` for remote server).
+2. **Each file** imports `graphql` from the corresponding generated directory (e.g., `import { graphql } from "../../generated/sdk/gql"`).
+3. **Export named constants** in SCREAMING_SNAKE_CASE (e.g., `LIST_DATASETS`, `UPLOAD_FILE`, `GET_AUTH_TOKEN`).
+4. **Generate types** with `pnpm codegen` — this populates `generated/`.
+5. **Apollo Client instances** are defined in `lib/apolloClient.ts` — one per server (remote, SDK).
+6. **Use Apollo hooks** (`useQuery`, `useMutation`, `useSubscription`) with the exported constants.
+
+#### CRITICAL: No Inline GraphQL Strings
+
+**NEVER define GraphQL operations inline in hooks or components.** All operations MUST be defined in the centralized `.ts` files under `graphql/remote/` or `graphql/sdk/` using the `graphql()` function.
+
+**❌ WRONG** — inline `gql` tagged template:
+```tsx
+// In a hook or component — NEVER DO THIS
+import { gql, useQuery } from "@apollo/client";
+
+const LIST_DATASETS = gql`
+  query ListDatasets {
+    listDatasets { id fileName createdAt rowSchema }
+  }
+`;
+
+const { data } = useQuery(LIST_DATASETS, { client: sdkClient });
+```
+
+**✅ CORRECT** — define in `graphql/sdk/query.ts`, use in hooks/components:
+```tsx
+// 1. In graphql/sdk/query.ts:
+import { graphql } from "../../generated/sdk/gql";
+
+export const LIST_DATASETS = graphql(`
+  query ListDatasets {
+    listDatasets {
+      id
+      fileName
+      createdAt
+      rowSchema
+    }
+  }
+`);
+
+// 2. In hooks/useDatasets.ts — import and use:
+import { useQuery } from "@apollo/client";
+import { LIST_DATASETS } from "../graphql/sdk/query";
+import { sdkClient } from "../lib/apolloClient";
+
+const { data } = useQuery(LIST_DATASETS, { client: sdkClient });
+// data is fully typed automatically via TypedDocumentNode
+```
+
+#### CRITICAL: No Hand-Written Types for GraphQL Schema
+
+**NEVER manually define TypeScript types/interfaces that mirror GraphQL schema types.** All GraphQL-derived types come from `generated/`.
+
+**❌ WRONG** — hand-written types duplicating the schema:
+```tsx
+interface Dataset {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  rowSchema: Record<string, unknown> | string;
+}
+```
+
+**✅ CORRECT** — derive types from generated code:
+```tsx
+import type {
+  ListDatasetsQuery,
+  UploadFileMutation,
+} from "../generated/sdk/graphql";
+
+// Use query result types for sub-shapes:
+type Dataset = ListDatasetsQuery["listDatasets"][number];
+type UploadedDataset = UploadFileMutation["uploadFile"];
+```
+
+#### GraphQL Codegen Workflow
+
+When adding or changing a GraphQL operation:
+
+1. **Add/edit the operation** in the appropriate `.ts` file under `graphql/sdk/` or `graphql/remote/`. Use the `graphql()` function from the corresponding `generated/*/gql` module.
+2. **Ensure the server is running** (`localhost:8000` for remote, `localhost:8100` for SDK).
+3. **Run `pnpm codegen`** to regenerate types in `generated/`.
+4. **Import the named constant** (e.g., `LIST_DATASETS`) in your hook/component.
+5. **Never import `gql` from `@apollo/client`** for defining operations — only use the generated `graphql()` function.
+
+#### When Client-Only Types Are Acceptable
+
+Only define local TypeScript types when they represent **client-side state not in the GraphQL schema** (e.g., UI state, Zustand store shapes, form state). Always document why the type cannot come from the generated code:
 
 ```tsx
-import { useQuery } from "@apollo/client/react";
-import { LIST_APPS } from "../graphql/query";
-
-const { data, loading, error } = useQuery(LIST_APPS, { pollInterval: 5000 });
+/**
+ * Client-only test suite state (stored in Zustand, not yet in GraphQL schema).
+ * Will be replaced with generated types once remote persistence is wired.
+ */
+export interface TestSuiteInfo {
+  id: string;
+  name: string;
+  // ...
+}
 ```
 
 ### Zustand Store
@@ -444,51 +539,49 @@ The same applies to pure utility functions — if two functions share a computat
 
 ```typescript
 // ✅ CORRECT — import the generated type as-is
-import type { RatingDetailsType } from "../generated/gql/graphql";
+import type { DatasetType } from "../generated/sdk/graphql";
 
-function showRating(rating: RatingDetailsType) { ... }
+function showDataset(dataset: DatasetType) { ... }
 ```
 
 **Use `type` aliases** to give generated types a meaningful local name without redefining them:
 
 ```typescript
 // ✅ CORRECT — alias, not a new type definition
-import type { ListAppsQuery } from "../generated/gql/graphql";
-export type ListAppsResult = ListAppsQuery;
+import type { ListDatasetsQuery } from "../generated/sdk/graphql";
+type Dataset = ListDatasetsQuery["listDatasets"][number];
 ```
 
 **Re-export from `lib/types.ts`** to give callers a stable import path, so internals can change without updating every import site:
 
 ```typescript
 // lib/types.ts
-export type { AppInfo, SessionInfo, PromptMetadata } from "../generated/gql/graphql";
-export { AppRunStatus } from "../generated/gql/graphql";
-export type ListAppsResult = ListAppsQuery;
+export type { DatasetType, DataEntryType } from "../generated/sdk/graphql";
+export type { AuthTokenType } from "../generated/remote/graphql";
 ```
 
 **Only define a new local type** when you genuinely need to add fields that don't exist in the schema (e.g., client-only state), and document why it can't use the generated type:
 
 ```typescript
-// ✅ ACCEPTABLE — adds client-only `spanId` field not in GraphQL schema
+// ✅ ACCEPTABLE — adds client-only fields not in GraphQL schema
 /**
- * Rating for an LLM call stored in client state.
- * Matches GraphQL RatingDetailsType but adds spanId for keying.
+ * Client-only test suite state (stored in Zustand, not yet in GraphQL schema).
+ * Will be replaced with generated types once remote persistence is wired.
  */
-export type LlmCallRating = {
-  spanId: string;        // client-only, not in GraphQL schema
-  rating: Rating;        // from generated enum
-  ratedAt: string;
-  ratedBy: RatedBy;      // from generated enum
-  notes?: string | null;
+export interface TestSuiteInfo {
+  id: string;
+  name: string;
+  metrics: MetricConfig[];
+  // ...
 };
 ```
 
 **Use query/subscription result field types for sub-shapes** rather than redefining them:
 
 ```typescript
-// ✅ CORRECT — derive the nested type from the generated query type
-import type { RunAppSubscription } from "../generated/gql/graphql";
-type RunUpdate = RunAppSubscription["run"];
+// ✅ CORRECT — derive the nested type from the generated mutation type
+import type { UploadFileMutation } from "../generated/sdk/graphql";
+type UploadedDataset = UploadFileMutation["uploadFile"];
 ```
 
 ---
