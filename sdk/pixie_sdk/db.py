@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS datasets (
     id TEXT PRIMARY KEY,
     file_name TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    row_schema TEXT NOT NULL  -- JSON schema inferred from the data
+    row_schema TEXT NOT NULL,  -- JSON schema inferred from the data
+    test_suite_id TEXT  -- UUID of the associated remote test suite (nullable)
 );
 
 CREATE TABLE IF NOT EXISTS data_entries (
@@ -63,6 +64,7 @@ async def create_dataset(
     *,
     file_name: str,
     row_schema: dict[str, Any],
+    test_suite_id: str | None = None,
 ) -> UUID:
     """Create a new dataset record.
 
@@ -70,6 +72,7 @@ async def create_dataset(
         db: Database connection.
         file_name: Original file name of the uploaded data.
         row_schema: JSON Schema inferred from the data rows.
+        test_suite_id: Optional UUID string of the associated remote test suite.
 
     Returns:
         The UUID of the newly created dataset.
@@ -77,8 +80,8 @@ async def create_dataset(
     dataset_id = uuid4()
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "INSERT INTO datasets (id, file_name, created_at, row_schema) VALUES (?, ?, ?, ?)",
-        (str(dataset_id), file_name, now, json.dumps(row_schema)),
+        "INSERT INTO datasets (id, file_name, created_at, row_schema, test_suite_id) VALUES (?, ?, ?, ?, ?)",
+        (str(dataset_id), file_name, now, json.dumps(row_schema), test_suite_id),
     )
     await db.commit()
     return dataset_id
@@ -95,10 +98,10 @@ async def get_dataset(
         dataset_id: UUID of the dataset.
 
     Returns:
-        Dataset dict with id, file_name, created_at, row_schema, or None.
+        Dataset dict with id, file_name, created_at, row_schema, test_suite_id, or None.
     """
     cursor = await db.execute(
-        "SELECT id, file_name, created_at, row_schema FROM datasets WHERE id = ?",
+        "SELECT id, file_name, created_at, row_schema, test_suite_id FROM datasets WHERE id = ?",
         (str(dataset_id),),
     )
     row = await cursor.fetchone()
@@ -109,6 +112,7 @@ async def get_dataset(
         "file_name": row["file_name"],
         "created_at": row["created_at"],
         "row_schema": json.loads(row["row_schema"]),
+        "test_suite_id": row["test_suite_id"],
     }
 
 
@@ -122,7 +126,7 @@ async def list_datasets(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         List of dataset dicts.
     """
     cursor = await db.execute(
-        "SELECT id, file_name, created_at, row_schema FROM datasets ORDER BY created_at DESC"
+        "SELECT id, file_name, created_at, row_schema, test_suite_id FROM datasets ORDER BY created_at DESC"
     )
     rows = await cursor.fetchall()
     return [
@@ -131,9 +135,34 @@ async def list_datasets(db: aiosqlite.Connection) -> list[dict[str, Any]]:
             "file_name": row["file_name"],
             "created_at": row["created_at"],
             "row_schema": json.loads(row["row_schema"]),
+            "test_suite_id": row["test_suite_id"],
         }
         for row in rows
     ]
+
+
+async def link_dataset_to_test_suite(
+    db: aiosqlite.Connection,
+    *,
+    dataset_id: UUID,
+    test_suite_id: str,
+) -> bool:
+    """Link a dataset to a remote test suite by setting test_suite_id.
+
+    Args:
+        db: Database connection.
+        dataset_id: UUID of the local dataset.
+        test_suite_id: UUID string of the remote test suite.
+
+    Returns:
+        True if the dataset was found and updated.
+    """
+    cursor = await db.execute(
+        "UPDATE datasets SET test_suite_id = ? WHERE id = ?",
+        (test_suite_id, str(dataset_id)),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
 
 
 # ============================================================================

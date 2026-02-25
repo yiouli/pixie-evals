@@ -62,3 +62,16 @@ export const GET_LABELING_CANDIDATES = graphql(`
     getLabelingCandidates(testSuiteId: $testSuiteId, count: $count)
   }
 `);
+
+export const LIST_EVALUATORS = graphql(`
+  query ListEvaluators($testSuiteId: UUID!) {
+    listEvaluators(testSuiteId: $testSuiteId) {
+      id
+      name
+      description
+      testSuite
+      storagePath
+      updatedAt
+    }
+  }
+`);

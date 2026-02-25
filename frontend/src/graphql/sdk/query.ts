@@ -7,6 +7,7 @@ export const LIST_DATASETS = graphql(`
       fileName
       createdAt
       rowSchema
+      testSuiteId
     }
   }
 `);
@@ -18,6 +19,7 @@ export const GET_DATASET = graphql(`
       fileName
       createdAt
       rowSchema
+      testSuiteId
     }
   }
 `);

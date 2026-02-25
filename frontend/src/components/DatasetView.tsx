@@ -9,30 +9,44 @@ import {
   Stack,
   IconButton,
   Tooltip,
+  Chip,
   CircularProgress,
   Alert,
 } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
+import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
+import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { DataGrid, type GridColDef, type GridRenderCellParams } from "@mui/x-data-grid";
-import { useQuery } from "@apollo/client";
+import { useQuery, useMutation } from "@apollo/client";
 import { sdkClient } from "../lib/apolloClient";
 import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
+import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
 import { EditableText } from "./EditableText";
 import { TestSuiteConfigDialog } from "./TestSuiteConfigDialog";
+import { LinkTestSuiteDialog } from "./LinkTestSuiteDialog";
+import { EvaluatorSelectionDialog } from "./EvaluatorSelectionDialog";
+import { EvaluationDialog } from "./EvaluationDialog";
+import { useMetrics } from "../hooks/useMetrics";
 
 /**
  * Dataset detail view.
  *
- * Shows dataset name (click to edit), action buttons (create test
- * suite, delete), description (click to edit), readonly JSON schema,
- * and a paginated data grid of the dataset content.
+ * Shows dataset name (click to edit), action buttons (conditional on
+ * whether dataset is linked to a test suite), description, JSON schema,
+ * evaluation metrics, and a paginated data grid of entries.
+ *
+ * When not linked to a test suite: "Create Test Suite" and "Link Test Suite".
+ * When linked: "Evaluate" button to start AI evaluation.
  */
 export function DatasetView() {
   const { datasetId } = useParams<{ datasetId: string }>();
   const navigate = useNavigate();
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [evalSelectorOpen, setEvalSelectorOpen] = useState(false);
+  const [evalDialogOpen, setEvalDialogOpen] = useState(false);
   const [datasetName, setDatasetName] = useState<string | null>(null);
   const [description, setDescription] = useState("");
 
@@ -40,6 +54,7 @@ export function DatasetView() {
     data: datasetData,
     loading: datasetLoading,
     error: datasetError,
+    refetch: refetchDataset,
   } = useQuery(GET_DATASET, {
     client: sdkClient,
     variables: { id: datasetId! },
@@ -55,9 +70,21 @@ export function DatasetView() {
     },
   );
 
+  const [linkMutation] = useMutation(LINK_DATASET_TO_TEST_SUITE, {
+    client: sdkClient,
+  });
+
   const dataset = datasetData?.getDataset;
   const entries = entriesData?.getDataEntries ?? [];
   const displayName = datasetName ?? dataset?.fileName ?? "Loading...";
+  const testSuiteId = dataset?.testSuiteId as string | null | undefined;
+  const hasTestSuite = !!testSuiteId;
+
+  // Fetch metrics for the linked test suite
+  const { metrics: allMetrics } = useMetrics();
+
+  // Metrics associated with the test suite (filter from all)
+  const metrics = useMemo(() => allMetrics, [allMetrics]);
 
   // Flatten entries for DataGrid
   const rows = useMemo(
@@ -99,6 +126,32 @@ export function DatasetView() {
     return JSON.stringify(schema, null, 2);
   }, [dataset?.rowSchema]);
 
+  const handleLinkTestSuite = async (selectedTestSuiteId: string) => {
+    if (!datasetId) return;
+    await linkMutation({
+      variables: {
+        datasetId,
+        testSuiteId: selectedTestSuiteId,
+      },
+    });
+    await refetchDataset();
+  };
+
+  const handleCreateTestSuiteSuccess = async (newTestSuiteId: string) => {
+    setConfigDialogOpen(false);
+    // Auto-link the dataset to the newly created test suite
+    if (datasetId) {
+      await linkMutation({
+        variables: {
+          datasetId,
+          testSuiteId: newTestSuiteId,
+        },
+      });
+      await refetchDataset();
+    }
+    navigate(`/test-suite/${newTestSuiteId}`);
+  };
+
   if (datasetLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", mt: 8 }}>
@@ -137,15 +190,47 @@ export function DatasetView() {
           />
         </Stack>
 
-        {/* Action buttons */}
-        <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
-          <Button
-            variant="contained"
-            startIcon={<ScienceRoundedIcon />}
-            onClick={() => setConfigDialogOpen(true)}
+        {/* Linked test suite indicator */}
+        {hasTestSuite && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ mb: 1, ml: 5 }}
           >
-            Create Test Suite
-          </Button>
+            Linked Test Suite: {testSuiteId}
+          </Typography>
+        )}
+
+        {/* Action buttons — conditional on test suite linkage */}
+        <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+          {!hasTestSuite ? (
+            <>
+              <Button
+                variant="contained"
+                startIcon={<ScienceRoundedIcon />}
+                onClick={() => setConfigDialogOpen(true)}
+              >
+                Create Test Suite
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<LinkRoundedIcon />}
+                onClick={() => setLinkDialogOpen(true)}
+              >
+                Link Test Suite
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="contained"
+                startIcon={<PlayArrowRoundedIcon />}
+                onClick={() => setEvalSelectorOpen(true)}
+              >
+                Evaluate
+              </Button>
+            </>
+          )}
           <Button
             variant="outlined"
             color="error"
@@ -172,6 +257,24 @@ export function DatasetView() {
             multiline
           />
         </Box>
+
+        {/* Metrics (shown when linked to test suite) */}
+        {hasTestSuite && metrics.length > 0 && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+              Evaluation Metrics
+            </Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              {metrics.map((metric) => (
+                <Chip
+                  key={metric.id as string}
+                  label={metric.name}
+                  variant="outlined"
+                />
+              ))}
+            </Stack>
+          </Box>
+        )}
 
         {/* Schema */}
         {schemaDisplay && (
@@ -224,10 +327,37 @@ export function DatasetView() {
         open={configDialogOpen}
         onClose={() => setConfigDialogOpen(false)}
         preselectedDatasetId={datasetId}
-        onSuccess={(testSuiteId) => {
-          setConfigDialogOpen(false);
-          navigate(`/test-suite/${testSuiteId}`);
-        }}
+        onSuccess={handleCreateTestSuiteSuccess}
+      />
+
+      {/* Link existing test suite */}
+      <LinkTestSuiteDialog
+        open={linkDialogOpen}
+        onClose={() => setLinkDialogOpen(false)}
+        onLink={handleLinkTestSuite}
+      />
+
+      {/* Evaluator selection dialog (when clicking Evaluate) */}
+      {hasTestSuite && (
+        <EvaluatorSelectionDialog
+          open={evalSelectorOpen}
+          onClose={() => setEvalSelectorOpen(false)}
+          testSuiteId={testSuiteId!}
+          onSelect={() => {
+            setEvalSelectorOpen(false);
+            setEvalDialogOpen(true);
+          }}
+        />
+      )}
+
+      {/* AI Evaluation progress dialog */}
+      <EvaluationDialog
+        open={evalDialogOpen}
+        onClose={() => setEvalDialogOpen(false)}
+        metrics={metrics.map((m) => ({
+          id: m.id as string,
+          name: m.name,
+        }))}
       />
     </Box>
   );

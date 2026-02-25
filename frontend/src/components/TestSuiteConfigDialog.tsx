@@ -16,10 +16,11 @@ import {
   Divider,
   Paper,
 } from "@mui/material";
-import { useQuery } from "@apollo/client";
+import { useQuery, useMutation } from "@apollo/client";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { sdkClient } from "../lib/apolloClient";
 import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
+import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
@@ -59,6 +60,9 @@ export function TestSuiteConfigDialog({
   const { datasets } = useDatasets();
   const { createTestSuite } = useTestSuites();
   const { createMetric } = useMetrics();
+  const [linkMutation] = useMutation(LINK_DATASET_TO_TEST_SUITE, {
+    client: sdkClient,
+  });
 
   // Fetch selected dataset details
   const { data: datasetData } = useQuery(GET_DATASET, {
@@ -147,6 +151,15 @@ export function TestSuiteConfigDialog({
         datasetId: selectedDatasetId,
         inputSchema,
       });
+
+      // Auto-link the dataset to the newly created test suite
+      await linkMutation({
+        variables: {
+          datasetId: selectedDatasetId,
+          testSuiteId: id,
+        },
+      });
+
       onSuccess?.(id);
     } finally {
       setCreating(false);

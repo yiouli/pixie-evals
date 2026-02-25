@@ -93,6 +93,20 @@ class TestGetDataset:
         assert result["file_name"] == "test.json"
         assert result["row_schema"] == sample_schema
         assert "created_at" in result
+        assert result["test_suite_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_returns_test_suite_id_when_set(self, conn, sample_schema):
+        """get_dataset should return test_suite_id when provided at creation."""
+        from uuid import uuid4
+
+        ts_id = str(uuid4())
+        dataset_id = await db.create_dataset(
+            conn, file_name="linked.json", row_schema=sample_schema, test_suite_id=ts_id
+        )
+        result = await db.get_dataset(conn, dataset_id)
+        assert result is not None
+        assert result["test_suite_id"] == ts_id
 
     @pytest.mark.asyncio
     async def test_returns_none_for_missing(self, conn):
@@ -261,3 +275,57 @@ class TestCountDataEntries:
 
         count = await db.count_data_entries(conn, uuid4())
         assert count == 0
+
+
+# ============================================================================
+# TestLinkDatasetToTestSuite
+# ============================================================================
+
+
+class TestLinkDatasetToTestSuite:
+    """Test linking a dataset to a remote test suite."""
+
+    @pytest.mark.asyncio
+    async def test_links_successfully(self, conn, sample_schema):
+        """link_dataset_to_test_suite should set the test_suite_id."""
+        from uuid import uuid4
+
+        dataset_id = await db.create_dataset(
+            conn, file_name="test.json", row_schema=sample_schema
+        )
+        ts_id = str(uuid4())
+        result = await db.link_dataset_to_test_suite(
+            conn, dataset_id=dataset_id, test_suite_id=ts_id
+        )
+        assert result is True
+
+        dataset = await db.get_dataset(conn, dataset_id)
+        assert dataset is not None
+        assert dataset["test_suite_id"] == ts_id
+
+    @pytest.mark.asyncio
+    async def test_returns_false_for_missing_dataset(self, conn):
+        """link_dataset_to_test_suite should return False for non-existent dataset."""
+        from uuid import uuid4
+
+        result = await db.link_dataset_to_test_suite(
+            conn, dataset_id=uuid4(), test_suite_id=str(uuid4())
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_overwrites_existing_link(self, conn, sample_schema):
+        """link_dataset_to_test_suite should overwrite a previously set test_suite_id."""
+        from uuid import uuid4
+
+        ts_id_1 = str(uuid4())
+        ts_id_2 = str(uuid4())
+        dataset_id = await db.create_dataset(
+            conn, file_name="test.json", row_schema=sample_schema, test_suite_id=ts_id_1
+        )
+        await db.link_dataset_to_test_suite(
+            conn, dataset_id=dataset_id, test_suite_id=ts_id_2
+        )
+        dataset = await db.get_dataset(conn, dataset_id)
+        assert dataset is not None
+        assert dataset["test_suite_id"] == ts_id_2

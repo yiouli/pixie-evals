@@ -46,6 +46,7 @@ class DatasetType:
     file_name: str
     created_at: datetime
     row_schema: JSON  # type: ignore[assignment]
+    test_suite_id: UUID | None = None
 
 
 @strawberry.type
@@ -104,6 +105,7 @@ class TestSuiteCreateInput:
 
 def _dataset_to_type(d: dict[str, Any]) -> DatasetType:
     """Convert a dataset dict from the DB to a Strawberry type."""
+    test_suite_id_raw = d.get("test_suite_id")
     return DatasetType(
         id=UUID(d["id"]) if isinstance(d["id"], str) else d["id"],
         file_name=d["file_name"],
@@ -113,6 +115,11 @@ def _dataset_to_type(d: dict[str, Any]) -> DatasetType:
             else d["created_at"]
         ),
         row_schema=d["row_schema"],
+        test_suite_id=(
+            UUID(test_suite_id_raw)
+            if isinstance(test_suite_id_raw, str)
+            else test_suite_id_raw
+        ),
     )
 
 
@@ -289,6 +296,27 @@ class Mutation:
         await conn.execute("DELETE FROM datasets WHERE id = ?", (str(id),))
         await conn.commit()
         return True
+
+    @strawberry.mutation
+    async def link_dataset_to_test_suite(
+        self,
+        info: Info,
+        dataset_id: UUID,
+        test_suite_id: UUID,
+    ) -> bool:
+        """Link a local dataset to a remote test suite.
+
+        Args:
+            dataset_id: UUID of the local dataset.
+            test_suite_id: UUID of the remote test suite.
+
+        Returns:
+            True if the dataset was found and linked.
+        """
+        conn = info.context["db"]
+        return await db.link_dataset_to_test_suite(
+            conn, dataset_id=dataset_id, test_suite_id=str(test_suite_id)
+        )
 
 
 # ============================================================================

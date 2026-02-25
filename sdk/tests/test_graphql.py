@@ -38,6 +38,7 @@ def _make_dataset_dict(**overrides):
         "file_name": "test.json",
         "created_at": datetime.now().isoformat(),
         "row_schema": {"type": "object", "properties": {}},
+        "test_suite_id": None,
     }
     base.update(overrides)
     return base
@@ -218,6 +219,38 @@ class TestMutationDeleteDataset:
         mutation = Mutation()
         result = await mutation.delete_dataset(info=_mock_info(mock_conn), id=uuid4())
         assert result is True
+
+
+# ============================================================================
+# TestMutationLinkDatasetToTestSuite
+# ============================================================================
+
+
+class TestMutationLinkDatasetToTestSuite:
+    """Test the link_dataset_to_test_suite mutation."""
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk.graphql.db")
+    async def test_returns_true_on_success(self, mock_db):
+        """link_dataset_to_test_suite returns True when db succeeds."""
+        mock_db.link_dataset_to_test_suite = AsyncMock(return_value=True)
+        mutation = Mutation()
+        result = await mutation.link_dataset_to_test_suite(
+            info=_mock_info(), dataset_id=uuid4(), test_suite_id=uuid4()
+        )
+        assert result is True
+        mock_db.link_dataset_to_test_suite.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk.graphql.db")
+    async def test_returns_false_when_not_found(self, mock_db):
+        """link_dataset_to_test_suite returns False when dataset not found."""
+        mock_db.link_dataset_to_test_suite = AsyncMock(return_value=False)
+        mutation = Mutation()
+        result = await mutation.link_dataset_to_test_suite(
+            info=_mock_info(), dataset_id=uuid4(), test_suite_id=uuid4()
+        )
+        assert result is False
 
 
 # ============================================================================

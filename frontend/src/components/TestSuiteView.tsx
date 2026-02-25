@@ -15,13 +15,11 @@ import {
 } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
-import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { EditableText } from "./EditableText";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
-import { EvaluationDialog } from "./EvaluationDialog";
 import { useTestSuites } from "../hooks/useTestSuites";
 import { useMetrics } from "../hooks/useMetrics";
 import { useEvaluation } from "../hooks/useEvaluation";
@@ -30,7 +28,7 @@ import { useEvaluation } from "../hooks/useEvaluation";
  * Test suite detail view.
  *
  * Shows test suite name (click to edit), evaluation metrics, action
- * buttons (manual label, AI evaluate, import test cases, delete),
+ * buttons (manual label, import test cases, delete),
  * description (click to edit), readonly metrics list, readonly input
  * schema, and paginated test cases with per-row action buttons.
  */
@@ -38,7 +36,6 @@ export function TestSuiteView() {
   const { testSuiteId } = useParams<{ testSuiteId: string }>();
   const navigate = useNavigate();
   const [labelingOpen, setLabelingOpen] = useState(false);
-  const [evalOpen, setEvalOpen] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>();
 
   // Fetch test suite data from remote server
@@ -199,13 +196,6 @@ export function TestSuiteView() {
           </Button>
           <Button
             variant="outlined"
-            startIcon={<ScienceRoundedIcon />}
-            onClick={() => setEvalOpen(true)}
-          >
-            AI Evaluate
-          </Button>
-          <Button
-            variant="outlined"
             startIcon={<FileUploadRoundedIcon />}
           >
             Import Test Cases
@@ -304,16 +294,6 @@ export function TestSuiteView() {
         }))}
         onSave={handleSaveLabel}
         onSkip={handleSkip}
-      />
-
-      {/* AI Evaluation Dialog */}
-      <EvaluationDialog
-        open={evalOpen}
-        onClose={() => setEvalOpen(false)}
-        metrics={metrics.map((m) => ({
-          id: m.id as string,
-          name: m.name,
-        }))}
       />
     </Box>
   );

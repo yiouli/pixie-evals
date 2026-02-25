@@ -1,6 +1,10 @@
 import { useQuery } from "@apollo/client";
 import { sdkClient } from "../lib/apolloClient";
 import { LIST_DATASETS } from "../graphql/sdk/query";
+import type { ListDatasetsQuery } from "../generated/sdk/graphql";
+
+/** A single dataset item derived from the LIST_DATASETS query result. */
+export type DatasetItem = ListDatasetsQuery["listDatasets"][number];
 
 /**
  * Hook for fetching the list of datasets from the local SDK server.
@@ -14,8 +18,10 @@ export function useDatasets() {
     { client: sdkClient },
   );
 
+  const datasets: DatasetItem[] = data?.listDatasets ?? [];
+
   return {
-    datasets: data?.listDatasets ?? [],
+    datasets,
     loading,
     error: error ?? null,
     refetch,
