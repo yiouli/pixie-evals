@@ -80,7 +80,7 @@ export function EvaluatorSelectionDialog({
         {!loading && !error && evaluators.length === 0 && (
           <Box sx={{ py: 4, textAlign: "center" }}>
             <Typography color="text.secondary">
-              No evaluators available for this test suite.
+              No evaluators available for this evaluation.
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               Train an evaluator first to enable AI evaluation.

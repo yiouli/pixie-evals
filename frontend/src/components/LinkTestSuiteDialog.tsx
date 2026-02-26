@@ -53,10 +53,10 @@ export function LinkTestSuiteDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Link to Test Suite</DialogTitle>
+      <DialogTitle>Link to Evaluation</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Select an existing test suite to link with this dataset.
+          Select an existing evaluation to link with this dataset.
         </Typography>
 
         {loading ? (
@@ -65,15 +65,15 @@ export function LinkTestSuiteDialog({
           </Box>
         ) : testSuites.length === 0 ? (
           <Typography color="text.secondary">
-            No test suites available. Create one first.
+            No evaluations available. Create one first.
           </Typography>
         ) : (
           <FormControl fullWidth sx={{ mt: 1 }}>
-            <InputLabel>Test Suite</InputLabel>
+            <InputLabel>Evaluation</InputLabel>
             <Select
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
-              label="Test Suite"
+              label="Evaluation"
             >
               {testSuites.map((ts) => (
                 <MenuItem key={ts.id as string} value={ts.id as string}>

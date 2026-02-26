@@ -120,7 +120,7 @@ export function ManualLabelingDialog({
           </Stack>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            No metrics configured for this test suite
+            No metrics configured for this evaluation
           </Typography>
         )}
 

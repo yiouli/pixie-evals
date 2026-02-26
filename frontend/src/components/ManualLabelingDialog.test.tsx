@@ -83,7 +83,7 @@ describe("ManualLabelingDialog", () => {
       </TestWrapper>,
     );
     expect(
-      screen.getByText("No metrics configured for this test suite"),
+      screen.getByText("No metrics configured for this evaluation"),
     ).toBeInTheDocument();
   });
 

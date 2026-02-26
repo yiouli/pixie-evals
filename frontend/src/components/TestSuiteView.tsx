@@ -148,7 +148,7 @@ export function TestSuiteView() {
     return (
       <Container maxWidth="xl" sx={{ py: 3 }}>
         <Alert severity="warning">
-          Test suite not found: {testSuiteId}
+          Evaluation not found: {testSuiteId}
         </Alert>
         <Button onClick={() => navigate("/")} sx={{ mt: 2 }}>
           Back to selection

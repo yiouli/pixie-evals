@@ -79,7 +79,7 @@ describe("EvaluatorSelectionDialog", () => {
       </TestWrapper>,
     );
     expect(
-      screen.getByText("No evaluators available for this test suite."),
+      screen.getByText("No evaluators available for this evaluation."),
     ).toBeInTheDocument();
   });
 

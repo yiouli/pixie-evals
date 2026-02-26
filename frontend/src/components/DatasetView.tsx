@@ -197,7 +197,7 @@ export function DatasetView() {
             color="text.secondary"
             sx={{ mb: 1, ml: 5 }}
           >
-            Linked Test Suite: {testSuiteId}
+            Linked Evaluation: {testSuiteId}
           </Typography>
         )}
 
@@ -210,14 +210,14 @@ export function DatasetView() {
                 startIcon={<ScienceRoundedIcon />}
                 onClick={() => setConfigDialogOpen(true)}
               >
-                Create Test Suite
+                Create Evaluation
               </Button>
               <Button
                 variant="outlined"
                 startIcon={<LinkRoundedIcon />}
                 onClick={() => setLinkDialogOpen(true)}
               >
-                Link Test Suite
+                Link Evaluation
               </Button>
             </>
           ) : (

@@ -177,11 +177,11 @@ export function TestSuiteConfigDialog({
   return (
     <>
       <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-        <DialogTitle>Create Test Suite</DialogTitle>
+        <DialogTitle>Create Evaluation</DialogTitle>
         <DialogContent>
           <TextField
             fullWidth
-            label="Test Suite Name"
+            label="Evaluation Name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             margin="normal"
@@ -314,7 +314,7 @@ export function TestSuiteConfigDialog({
               metrics.every((m) => !m.name.trim())
             }
           >
-            {creating ? "Creating..." : "Create Test Suite"}
+            {creating ? "Creating..." : "Create Evaluation"}
           </Button>
         </DialogActions>
       </Dialog>
