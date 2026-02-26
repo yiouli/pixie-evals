@@ -63,6 +63,18 @@ export const GET_LABELING_CANDIDATES = graphql(`
   }
 `);
 
+export const GET_TEST_SUITE_METRICS = graphql(`
+  query GetTestSuiteMetrics($testSuiteId: UUID!) {
+    getTestSuiteMetrics(testSuiteId: $testSuiteId) {
+      id
+      name
+      description
+      config
+      account
+    }
+  }
+`);
+
 export const LIST_EVALUATORS = graphql(`
   query ListEvaluators($testSuiteId: UUID!) {
     listEvaluators(testSuiteId: $testSuiteId) {

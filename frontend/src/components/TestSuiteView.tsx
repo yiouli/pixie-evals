@@ -12,6 +12,7 @@ import {
   CircularProgress,
   Alert,
 } from "@mui/material";
+import { useQuery } from "@apollo/client";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
@@ -21,9 +22,12 @@ import { MetricChip } from "./MetricChip";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
 import { useTestSuites } from "../hooks/useTestSuites";
-import { useMetrics } from "../hooks/useMetrics";
+import { GET_TEST_SUITE_METRICS } from "../graphql/remote/query";
+import { remoteClient } from "../lib/apolloClient";
 import { parseMetricConfig } from "../lib/metricUtils";
+import { useAuthStore } from "../lib/store";
 import { useEvaluation } from "../hooks/useEvaluation";
+import { JsonSchemaViewer } from "@stoplight/json-schema-viewer";
 
 /**
  * Test suite detail view.
@@ -41,7 +45,16 @@ export function TestSuiteView() {
 
   // Fetch test suite data from remote server
   const { testSuites, loading: suitesLoading } = useTestSuites();
-  const { metrics: allMetrics, loading: metricsLoading } = useMetrics();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const { data: metricsData, loading: metricsLoading } = useQuery(
+    GET_TEST_SUITE_METRICS,
+    {
+      client: remoteClient,
+      variables: { testSuiteId: testSuiteId ?? "" },
+      skip: !isAuthenticated || !testSuiteId,
+    },
+  );
+  const metrics = metricsData?.getTestSuiteMetrics ?? [];
   const {
     testCases,
     loading: casesLoading,
@@ -57,23 +70,6 @@ export function TestSuiteView() {
   const testSuite = useMemo(
     () => testSuites.find((ts) => ts.id === testSuiteId),
     [testSuites, testSuiteId],
-  );
-
-  // Extract the metric IDs associated with this test suite from config
-  const suiteMetricIds: string[] = useMemo(() => {
-    if (!testSuite?.config) return [];
-    const config = parseMetricConfig(testSuite.config);
-    const ids = config.metric_ids as string[] | undefined;
-    return ids ?? [];
-  }, [testSuite]);
-
-  // Filter metrics to those belonging to this test suite
-  const metrics = useMemo(
-    () =>
-      suiteMetricIds.length > 0
-        ? allMetrics.filter((m) => suiteMetricIds.includes(m.id as string))
-        : allMetrics,
-    [allMetrics, suiteMetricIds],
   );
 
   // Extract input schema from test suite config
@@ -254,12 +250,11 @@ export function TestSuiteView() {
             variant="outlined"
             sx={{ p: 2, borderRadius: 2, bgcolor: "grey.50" }}
           >
-            <Box
-              component="pre"
-              sx={{ m: 0, fontSize: "0.875rem", fontFamily: "monospace" }}
-            >
-              {JSON.stringify(inputSchema, null, 2)}
-            </Box>
+            <JsonSchemaViewer
+              schema={inputSchema}
+              emptyText="No input schema defined."
+              defaultExpandedDepth={2}
+            />
           </Paper>
         </Box>
 

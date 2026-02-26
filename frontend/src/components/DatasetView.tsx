@@ -5,18 +5,13 @@ import {
   Container,
   Typography,
   Button,
-  Paper,
   Stack,
   IconButton,
   Tooltip,
-  Chip,
   CircularProgress,
   Alert,
 } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
-import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
-import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
-import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { DataGrid, type GridColDef, type GridRenderCellParams } from "@mui/x-data-grid";
 import { useQuery, useMutation } from "@apollo/client";
@@ -25,26 +20,22 @@ import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
 import { EditableText } from "./EditableText";
 import { TestSuiteConfigDialog } from "./TestSuiteConfigDialog";
-import { LinkTestSuiteDialog } from "./LinkTestSuiteDialog";
+import { EvaluationCard } from "./EvaluationCard";
 import { EvaluatorSelectionDialog } from "./EvaluatorSelectionDialog";
 import { EvaluationDialog } from "./EvaluationDialog";
-import { useMetrics } from "../hooks/useMetrics";
+import { JsonSchemaViewer } from "@stoplight/json-schema-viewer";
 
 /**
  * Dataset detail view.
  *
- * Shows dataset name (click to edit), action buttons (conditional on
- * whether dataset is linked to a test suite), description, JSON schema,
- * evaluation metrics, and a paginated data grid of entries.
- *
- * When not linked to a test suite: "Create Test Suite" and "Link Test Suite".
- * When linked: "Evaluate" button to start AI evaluation.
+ * Shows dataset name (click to edit), an EvaluationCard for the linked
+ * evaluation (with dropdown to switch/create), description, JSON schema,
+ * and a paginated data grid of entries.
  */
 export function DatasetView() {
   const { datasetId } = useParams<{ datasetId: string }>();
   const navigate = useNavigate();
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [evalSelectorOpen, setEvalSelectorOpen] = useState(false);
   const [evalDialogOpen, setEvalDialogOpen] = useState(false);
   const [datasetName, setDatasetName] = useState<string | null>(null);
@@ -80,12 +71,6 @@ export function DatasetView() {
   const testSuiteId = dataset?.testSuiteId as string | null | undefined;
   const hasTestSuite = !!testSuiteId;
 
-  // Fetch metrics for the linked test suite
-  const { metrics: allMetrics } = useMetrics();
-
-  // Metrics associated with the test suite (filter from all)
-  const metrics = useMemo(() => allMetrics, [allMetrics]);
-
   // Flatten entries for DataGrid
   const rows = useMemo(
     () =>
@@ -116,15 +101,6 @@ export function DatasetView() {
       }));
   }, [rows]);
 
-  // Format schema for display
-  const schemaDisplay = useMemo(() => {
-    if (!dataset?.rowSchema) return null;
-    const schema =
-      typeof dataset.rowSchema === "string"
-        ? JSON.parse(dataset.rowSchema)
-        : dataset.rowSchema;
-    return JSON.stringify(schema, null, 2);
-  }, [dataset?.rowSchema]);
 
   const handleLinkTestSuite = async (selectedTestSuiteId: string) => {
     if (!datasetId) return;
@@ -190,47 +166,16 @@ export function DatasetView() {
           />
         </Stack>
 
-        {/* Linked test suite indicator */}
-        {hasTestSuite && (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 1, ml: 5 }}
-          >
-            Linked Evaluation: {testSuiteId}
-          </Typography>
-        )}
-
-        {/* Action buttons — conditional on test suite linkage */}
-        <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
-          {!hasTestSuite ? (
-            <>
-              <Button
-                variant="contained"
-                startIcon={<ScienceRoundedIcon />}
-                onClick={() => setConfigDialogOpen(true)}
-              >
-                Create Evaluation
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<LinkRoundedIcon />}
-                onClick={() => setLinkDialogOpen(true)}
-              >
-                Link Evaluation
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="contained"
-                startIcon={<PlayArrowRoundedIcon />}
-                onClick={() => setEvalSelectorOpen(true)}
-              >
-                Evaluate
-              </Button>
-            </>
-          )}
+        {/* Linked evaluation card */}
+        <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ mb: 3 }}>
+          <Box sx={{ flex: 1, maxWidth: 480 }}>
+            <EvaluationCard
+              testSuiteId={(testSuiteId as string) ?? null}
+              onCreateEvaluation={() => setConfigDialogOpen(true)}
+              onLinkChange={handleLinkTestSuite}
+              onEvaluate={() => setEvalSelectorOpen(true)}
+            />
+          </Box>
           <Button
             variant="outlined"
             color="error"
@@ -258,49 +203,13 @@ export function DatasetView() {
           />
         </Box>
 
-        {/* Metrics (shown when linked to test suite) */}
-        {hasTestSuite && metrics.length > 0 && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-              Evaluation Metrics
-            </Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap">
-              {metrics.map((metric) => (
-                <Chip
-                  key={metric.id as string}
-                  label={metric.name}
-                  variant="outlined"
-                />
-              ))}
-            </Stack>
-          </Box>
-        )}
-
         {/* Schema */}
-        {schemaDisplay && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-              Schema
-            </Typography>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                bgcolor: "grey.50",
-                maxHeight: 300,
-                overflow: "auto",
-              }}
-            >
-              <Box
-                component="pre"
-                sx={{ m: 0, fontSize: "0.875rem", fontFamily: "monospace" }}
-              >
-                {schemaDisplay}
-              </Box>
-            </Paper>
-          </Box>
-        )}
+
+        <JsonSchemaViewer
+          schema={dataset?.rowSchema}
+          emptyText="Cannot parse row schema."
+          defaultExpandedDepth={2}
+        />
 
         {/* Data Grid */}
         <Box sx={{ mb: 3 }}>
@@ -330,13 +239,6 @@ export function DatasetView() {
         onSuccess={handleCreateTestSuiteSuccess}
       />
 
-      {/* Link existing test suite */}
-      <LinkTestSuiteDialog
-        open={linkDialogOpen}
-        onClose={() => setLinkDialogOpen(false)}
-        onLink={handleLinkTestSuite}
-      />
-
       {/* Evaluator selection dialog (when clicking Evaluate) */}
       {hasTestSuite && (
         <EvaluatorSelectionDialog
@@ -354,10 +256,6 @@ export function DatasetView() {
       <EvaluationDialog
         open={evalDialogOpen}
         onClose={() => setEvalDialogOpen(false)}
-        metrics={metrics.map((m) => ({
-          id: m.id as string,
-          name: m.name,
-        }))}
       />
     </Box>
   );
