@@ -3,10 +3,9 @@ import { remoteClient } from "../lib/apolloClient";
 import { useAuthStore } from "../lib/store";
 import { LIST_METRICS } from "../graphql/remote/query";
 import { CREATE_METRIC } from "../graphql/remote/mutation";
-import type { ListMetricsQuery } from "../generated/remote/graphql";
 
-/** A metric as returned by the ListMetrics query. */
-export type Metric = ListMetricsQuery["listMetrics"][number];
+// Re-export Metric type from the shared utility module
+export type { Metric } from "../lib/metricUtils";
 
 /** Input for creating a new metric via the remote server. */
 export interface CreateMetricInput {

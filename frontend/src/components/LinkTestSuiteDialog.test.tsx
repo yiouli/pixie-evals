@@ -38,7 +38,7 @@ describe("LinkTestSuiteDialog", () => {
         />
       </TestWrapper>,
     );
-    expect(screen.getByText("Link to Test Suite")).toBeInTheDocument();
+    expect(screen.getByText("Link to Evaluation")).toBeInTheDocument();
   });
 
   it("should not render when closed", () => {
@@ -67,7 +67,7 @@ describe("LinkTestSuiteDialog", () => {
       </TestWrapper>,
     );
     expect(
-      screen.getByText("No test suites available. Create one first."),
+      screen.getByText("No evaluations available. Create one first."),
     ).toBeInTheDocument();
   });
 

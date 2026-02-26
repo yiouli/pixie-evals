@@ -22,10 +22,10 @@ import { sdkClient } from "../lib/apolloClient";
 import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
+import { MetricsAutocomplete } from "./MetricsAutocomplete";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
-import { useMetrics } from "../hooks/useMetrics";
-import { MetricEditor, type MetricConfig, createEmptyMetric } from "./MetricEditor";
+import type { Metric } from "../lib/metricUtils";
 
 interface TestSuiteConfigDialogProps {
   open: boolean;
@@ -50,7 +50,7 @@ export function TestSuiteConfigDialog({
 }: TestSuiteConfigDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [metrics, setMetrics] = useState<MetricConfig[]>([createEmptyMetric()]);
+  const [selectedMetrics, setSelectedMetrics] = useState<Metric[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(
     preselectedDatasetId ?? null,
   );
@@ -59,7 +59,6 @@ export function TestSuiteConfigDialog({
 
   const { datasets } = useDatasets();
   const { createTestSuite } = useTestSuites();
-  const { createMetric } = useMetrics();
   const [linkMutation] = useMutation(LINK_DATASET_TO_TEST_SUITE, {
     client: sdkClient,
   });
@@ -122,21 +121,7 @@ export function TestSuiteConfigDialog({
     if (!selectedDatasetId) return;
     setCreating(true);
     try {
-      const validMetrics = metrics.filter((m) => m.name.trim());
-
-      // Create each metric on the remote server and collect IDs
-      const metricIds: string[] = [];
-      for (const m of validMetrics) {
-        const metricId = await createMetric({
-          name: m.name.trim(),
-          config: {
-            type: m.type,
-            categories: m.type === "category" ? m.categories : undefined,
-            scaling: m.type === "scale" ? m.scaleMax : undefined,
-          },
-        });
-        metricIds.push(metricId);
-      }
+      const metricIds = selectedMetrics.map((m) => m.id as string);
 
       // Get input schema from dataset
       const rawSchema = datasetData?.getDataset?.rowSchema;
@@ -146,7 +131,6 @@ export function TestSuiteConfigDialog({
       const id = await createTestSuite({
         name: name.trim(),
         description: description.trim(),
-        metrics: validMetrics,
         metricIds,
         datasetId: selectedDatasetId,
         inputSchema,
@@ -169,7 +153,7 @@ export function TestSuiteConfigDialog({
   const handleClose = () => {
     setName("");
     setDescription("");
-    setMetrics([createEmptyMetric()]);
+    setSelectedMetrics([]);
     setSelectedDatasetId(preselectedDatasetId ?? null);
     onClose();
   };
@@ -203,7 +187,10 @@ export function TestSuiteConfigDialog({
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
               Metrics
             </Typography>
-            <MetricEditor value={metrics} onChange={setMetrics} />
+            <MetricsAutocomplete
+              value={selectedMetrics}
+              onChange={setSelectedMetrics}
+            />
           </Box>
 
           <Divider sx={{ my: 2 }} />
@@ -311,7 +298,7 @@ export function TestSuiteConfigDialog({
               !name.trim() ||
               !selectedDatasetId ||
               creating ||
-              metrics.every((m) => !m.name.trim())
+              selectedMetrics.length === 0
             }
           >
             {creating ? "Creating..." : "Create Evaluation"}

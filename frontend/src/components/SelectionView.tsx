@@ -22,10 +22,14 @@ import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
 import StorageRoundedIcon from "@mui/icons-material/StorageRounded";
 import ScienceRoundedIcon from "@mui/icons-material/ScienceRounded";
+import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { TestSuiteConfigDialog } from "./TestSuiteConfigDialog";
+import { MetricDialog } from "./MetricDialog";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
+import { useMetrics } from "../hooks/useMetrics";
+import { getMetricDescription, parseMetricConfig, type Metric } from "../lib/metricUtils";
 
 /** A single item in a collection tab. */
 interface CollectionItem {
@@ -34,11 +38,12 @@ interface CollectionItem {
   description: string;
 }
 
-/** A tab representing a category of items (test suites or datasets). */
+/** A tab representing a category of items (test suites, datasets, or metrics). */
 interface Collection {
   key: string;
   title: string;
   color: string;
+  icon: React.ReactNode;
   items: CollectionItem[];
   onItemClick: (id: string) => void;
 }
@@ -46,10 +51,9 @@ interface Collection {
 /**
  * Landing / selection view.
  *
- * Closely resembles pixie-ui's SelectionScreen. Displays two tabs—
- * "Test Suites" and "Datasets"—each with a searchable grid of cards.
- * The "Add" button opens the appropriate dialog (upload dataset or
- * configure a test suite) instead of showing instructions.
+ * Closely resembles pixie-ui's SelectionScreen. Displays three tabs—
+ * "Datasets", "Evaluations", and "Metrics"—each with a searchable
+ * grid of cards. The "Add" button opens the appropriate dialog.
  */
 export function SelectionView() {
   const theme = useTheme();
@@ -58,9 +62,12 @@ export function SelectionView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [metricDialogOpen, setMetricDialogOpen] = useState(false);
+  const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
 
   const { datasets } = useDatasets();
   const { testSuites } = useTestSuites();
+  const { metrics: allMetrics } = useMetrics();
 
   // Build collection definitions
   const collections = useMemo<Collection[]>(
@@ -69,6 +76,7 @@ export function SelectionView() {
         key: "datasets",
         title: "Datasets",
         color: theme.palette.secondary.main,
+        icon: <ScienceRoundedIcon fontSize="small" />,
         items: datasets.map((ds) => ({
           id: ds.id,
           title: ds.fileName,
@@ -80,6 +88,7 @@ export function SelectionView() {
         key: "test-suites",
         title: "Evaluations",
         color: theme.palette.primary.main,
+        icon: <StorageRoundedIcon fontSize="small" />,
         items: testSuites.map((ts) => ({
           id: ts.id as string,
           title: ts.name,
@@ -87,8 +96,31 @@ export function SelectionView() {
         })),
         onItemClick: (id: string) => navigate(`/test-suite/${id}`),
       },
+      {
+        key: "metrics",
+        title: "Metrics",
+        color: theme.palette.info.main,
+        icon: <BarChartRoundedIcon fontSize="small" />,
+        items: allMetrics.map((m) => {
+          const config = parseMetricConfig(m.config);
+          return {
+            id: m.id as string,
+            title: m.name,
+            description: getMetricDescription(m.description, config),
+          };
+        }),
+        onItemClick: (id: string) => {
+          const metric = allMetrics.find(
+            (m) => (m.id as string) === id,
+          );
+          if (metric) {
+            setEditingMetric(metric);
+            setMetricDialogOpen(true);
+          }
+        },
+      },
     ],
-    [datasets, testSuites, navigate, theme],
+    [datasets, testSuites, allMetrics, navigate, theme],
   );
 
   const selectedCollection = collections[tabIndex];
@@ -110,8 +142,11 @@ export function SelectionView() {
   const handleAddClick = () => {
     if (tabIndex === 0) {
       setUploadDialogOpen(true);
-    } else {
+    } else if (tabIndex === 1) {
       setConfigDialogOpen(true);
+    } else {
+      setEditingMetric(null);
+      setMetricDialogOpen(true);
     }
   };
 
@@ -178,11 +213,7 @@ export function SelectionView() {
                   key={col.key}
                   label={
                     <Stack direction="row" alignItems="center" gap={1}>
-                      {idx === 0 ? (
-                        <ScienceRoundedIcon fontSize="small" />
-                      ) : (
-                        <StorageRoundedIcon fontSize="small" />
-                      )}
+                      {col.icon}
                       <span>{col.title}</span>
                       <Chip
                         label={col.items.length}
@@ -328,6 +359,18 @@ export function SelectionView() {
         onSuccess={(testSuiteId) => {
           setConfigDialogOpen(false);
           navigate(`/test-suite/${testSuiteId}`);
+        }}
+      />
+
+      <MetricDialog
+        open={metricDialogOpen}
+        onClose={() => {
+          setMetricDialogOpen(false);
+          setEditingMetric(null);
+        }}
+        metric={editingMetric}
+        onCreated={() => {
+          setMetricDialogOpen(false);
         }}
       />
     </Box>

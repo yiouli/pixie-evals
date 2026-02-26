@@ -9,7 +9,6 @@ import {
   Stack,
   IconButton,
   Tooltip,
-  Chip,
   CircularProgress,
   Alert,
 } from "@mui/material";
@@ -18,10 +17,12 @@ import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { EditableText } from "./EditableText";
+import { MetricChip } from "./MetricChip";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
 import { useTestSuites } from "../hooks/useTestSuites";
 import { useMetrics } from "../hooks/useMetrics";
+import { parseMetricConfig } from "../lib/metricUtils";
 import { useEvaluation } from "../hooks/useEvaluation";
 
 /**
@@ -61,7 +62,7 @@ export function TestSuiteView() {
   // Extract the metric IDs associated with this test suite from config
   const suiteMetricIds: string[] = useMemo(() => {
     if (!testSuite?.config) return [];
-    const config = testSuite.config as Record<string, unknown>;
+    const config = parseMetricConfig(testSuite.config);
     const ids = config.metric_ids as string[] | undefined;
     return ids ?? [];
   }, [testSuite]);
@@ -78,7 +79,7 @@ export function TestSuiteView() {
   // Extract input schema from test suite config
   const inputSchema = useMemo(() => {
     if (!testSuite?.config) return {};
-    const config = testSuite.config as Record<string, unknown>;
+    const config = parseMetricConfig(testSuite.config);
     return config.input_schema ?? {};
   }, [testSuite]);
 
@@ -234,12 +235,11 @@ export function TestSuiteView() {
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
             Evaluation Metrics
           </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             {metrics.map((metric) => (
-              <Chip
+              <MetricChip
                 key={metric.id as string}
-                label={metric.name}
-                variant="outlined"
+                metric={metric}
               />
             ))}
           </Stack>

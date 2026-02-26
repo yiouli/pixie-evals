@@ -3,7 +3,6 @@ import { remoteClient } from "../lib/apolloClient";
 import { useAuthStore } from "../lib/store";
 import { LIST_TEST_SUITES } from "../graphql/remote/query";
 import { CREATE_TEST_SUITE } from "../graphql/remote/mutation";
-import type { MetricConfig } from "../components/MetricEditor";
 import type { ListTestSuitesQuery } from "../generated/remote/graphql";
 
 /** A test suite as returned by the ListTestSuites query. */
@@ -13,7 +12,6 @@ export type TestSuite = ListTestSuitesQuery["listTestSuites"][number];
 export interface CreateTestSuiteInput {
   name: string;
   description: string;
-  metrics: MetricConfig[];
   metricIds: string[];
   datasetId: string;
   inputSchema: unknown;

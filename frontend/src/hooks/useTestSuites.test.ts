@@ -92,7 +92,6 @@ describe("useTestSuites", () => {
       id = await result.current.createTestSuite({
         name: "My Suite",
         description: "Description",
-        metrics: [],
         metricIds: ["m-1"],
         datasetId: "ds-1",
         inputSchema: { type: "object" },
