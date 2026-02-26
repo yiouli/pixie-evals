@@ -66,17 +66,6 @@ export function SelectionView() {
   const collections = useMemo<Collection[]>(
     () => [
       {
-        key: "test-suites",
-        title: "Test Suites",
-        color: theme.palette.primary.main,
-        items: testSuites.map((ts) => ({
-          id: ts.id as string,
-          title: ts.name,
-          description: ts.description || "No description",
-        })),
-        onItemClick: (id: string) => navigate(`/test-suite/${id}`),
-      },
-      {
         key: "datasets",
         title: "Datasets",
         color: theme.palette.secondary.main,
@@ -86,6 +75,17 @@ export function SelectionView() {
           description: `Uploaded ${new Date(ds.createdAt).toLocaleDateString()}`,
         })),
         onItemClick: (id: string) => navigate(`/dataset/${id}`),
+      },
+      {
+        key: "test-suites",
+        title: "Evaluations",
+        color: theme.palette.primary.main,
+        items: testSuites.map((ts) => ({
+          id: ts.id as string,
+          title: ts.name,
+          description: ts.description || "No description",
+        })),
+        onItemClick: (id: string) => navigate(`/test-suite/${id}`),
       },
     ],
     [datasets, testSuites, navigate, theme],
@@ -109,9 +109,9 @@ export function SelectionView() {
 
   const handleAddClick = () => {
     if (tabIndex === 0) {
-      setConfigDialogOpen(true);
-    } else {
       setUploadDialogOpen(true);
+    } else {
+      setConfigDialogOpen(true);
     }
   };
 
