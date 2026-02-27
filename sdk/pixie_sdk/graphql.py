@@ -737,10 +737,12 @@ class Subscription:
             EvaluationUpdate progress messages.
         """
         import dspy
+        from dotenv import load_dotenv
 
         from pixie_sdk.remote_client import RemoteClient
 
         try:
+            load_dotenv()  # Load OPENAI_API_KEY from .env if present
             # Step 1: Load dataset to get test_suite_id
             yield EvaluationUpdate(
                 status=EvaluationStatus.LOADING,
@@ -860,7 +862,8 @@ class Subscription:
                         input_kwargs = _prepare_dspy_input(entry_data, input_schema)
 
                         # Run DSPy module
-                        result = module(**input_kwargs)
+                        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+                            result = module(**input_kwargs)
 
                         # Extract output fields
                         output_dict: dict[str, Any] = {}
