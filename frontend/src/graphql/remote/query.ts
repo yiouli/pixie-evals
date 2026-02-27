@@ -87,3 +87,13 @@ export const LIST_EVALUATORS = graphql(`
     }
   }
 `);
+
+export const GET_EVALUATOR_WITH_SIGNATURE = graphql(`
+  query GetEvaluatorWithSignature($testSuiteId: UUID!) {
+    getEvaluatorWithSignature(testSuiteId: $testSuiteId) {
+      inputSchema
+      outputSchema
+      savedProgram
+    }
+  }
+`);

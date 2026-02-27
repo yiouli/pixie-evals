@@ -10,3 +10,20 @@ export const CREATE_TEST_SUITE_PROGRESS = graphql(`
     }
   }
 `);
+
+export const EVALUATE_DATASET = graphql(`
+  subscription EvaluateDataset($datasetId: UUID!) {
+    evaluateDataset(datasetId: $datasetId) {
+      status
+      message
+      progress
+      total
+      completed
+      results {
+        entryId
+        output
+        error
+      }
+    }
+  }
+`);

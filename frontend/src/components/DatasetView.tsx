@@ -21,7 +21,6 @@ import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
 import { EditableText } from "./EditableText";
 import { TestSuiteConfigDialog } from "./TestSuiteConfigDialog";
 import { EvaluationCard } from "./EvaluationCard";
-import { EvaluatorSelectionDialog } from "./EvaluatorSelectionDialog";
 import { EvaluationDialog } from "./EvaluationDialog";
 import { JsonSchemaViewer } from "@stoplight/json-schema-viewer";
 
@@ -36,7 +35,6 @@ export function DatasetView() {
   const { datasetId } = useParams<{ datasetId: string }>();
   const navigate = useNavigate();
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
-  const [evalSelectorOpen, setEvalSelectorOpen] = useState(false);
   const [evalDialogOpen, setEvalDialogOpen] = useState(false);
   const [datasetName, setDatasetName] = useState<string | null>(null);
   const [description, setDescription] = useState("");
@@ -69,7 +67,6 @@ export function DatasetView() {
   const entries = entriesData?.getDataEntries ?? [];
   const displayName = datasetName ?? dataset?.fileName ?? "Loading...";
   const testSuiteId = dataset?.testSuiteId as string | null | undefined;
-  const hasTestSuite = !!testSuiteId;
 
   // Flatten entries for DataGrid
   const rows = useMemo(
@@ -173,7 +170,7 @@ export function DatasetView() {
               testSuiteId={(testSuiteId as string) ?? null}
               onCreateEvaluation={() => setConfigDialogOpen(true)}
               onLinkChange={handleLinkTestSuite}
-              onEvaluate={() => setEvalSelectorOpen(true)}
+              onEvaluate={() => setEvalDialogOpen(true)}
             />
           </Box>
           <Button
@@ -239,24 +236,14 @@ export function DatasetView() {
         onSuccess={handleCreateTestSuiteSuccess}
       />
 
-      {/* Evaluator selection dialog (when clicking Evaluate) */}
-      {hasTestSuite && (
-        <EvaluatorSelectionDialog
-          open={evalSelectorOpen}
-          onClose={() => setEvalSelectorOpen(false)}
-          testSuiteId={testSuiteId!}
-          onSelect={() => {
-            setEvalSelectorOpen(false);
-            setEvalDialogOpen(true);
-          }}
+      {/* AI Evaluation progress dialog */}
+      {datasetId && (
+        <EvaluationDialog
+          open={evalDialogOpen}
+          onClose={() => setEvalDialogOpen(false)}
+          datasetId={datasetId}
         />
       )}
-
-      {/* AI Evaluation progress dialog */}
-      <EvaluationDialog
-        open={evalDialogOpen}
-        onClose={() => setEvalDialogOpen(false)}
-      />
     </Box>
   );
 }

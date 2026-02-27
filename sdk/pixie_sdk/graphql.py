@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import enum
 import json
+import logging
 import os
 import tempfile
 from datetime import datetime
@@ -26,12 +27,15 @@ from pixie_sdk import db
 from pixie_sdk import embed
 from pixie_sdk import ingest
 
+logger = logging.getLogger(__name__)
+
 # ============================================================================
 # Constants
 # ============================================================================
 
 EMBED_BATCH_SIZE = 100  # Rows per OpenAI embedding call
 UPLOAD_BATCH_SIZE = 50  # Test cases per addTestCases mutation
+EVAL_BATCH_SIZE = 10  # Test cases per DSPy evaluation batch
 
 # ============================================================================
 # Strawberry Types
@@ -83,6 +87,48 @@ class TestSuiteCreationProgress:
     test_suite_id: UUID | None = None  # set once created on remote server
 
 
+@strawberry.enum
+class EvaluationStatus(enum.Enum):
+    """Status steps for the dataset evaluation pipeline."""
+
+    LOADING = "loading"
+    EVALUATING = "evaluating"
+    SAVING = "saving"
+    COMPLETE = "complete"
+    ERROR = "error"
+
+
+@strawberry.type
+class EvaluationResultItem:
+    """Result of evaluating a single test case."""
+
+    entry_id: str
+    """Local data entry ID."""
+    output: JSON  # type: ignore[assignment]
+    """DSPy module output dict."""
+    error: str | None = None
+    """Error message if evaluation failed for this item."""
+
+
+@strawberry.type
+class EvaluationUpdate:
+    """Progress update emitted during dataset evaluation.
+
+    Sent over a GraphQL subscription so the frontend can show
+    real-time status and results to the user.
+    """
+
+    status: EvaluationStatus
+    message: str
+    progress: float  # 0.0 – 1.0
+    total: int = 0
+    """Total number of test cases."""
+    completed: int = 0
+    """Number of completed evaluations so far."""
+    results: list[EvaluationResultItem] | None = None
+    """Batch of results, present during EVALUATING updates."""
+
+
 # ============================================================================
 # Inputs
 # ============================================================================
@@ -99,8 +145,224 @@ class TestSuiteCreateInput:
 
 
 # ============================================================================
+# DSPy Evaluation Helpers
+# ============================================================================
+
+# JSON Schema type string → Python type
+_JSON_TYPE_TO_PYTHON: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+    "null": type(None),
+}
+
+
+def _json_schema_to_python_type(schema: dict[str, Any]) -> type:
+    """Convert a JSON Schema fragment to a Python type."""
+    json_type = schema.get("type", "string")
+    if json_type == "array":
+        return list
+    if json_type == "object":
+        return dict
+    return _JSON_TYPE_TO_PYTHON.get(json_type, str)
+
+
+def _build_dspy_signature(
+    input_schema: dict[str, Any],
+    output_schema: dict[str, Any],
+) -> type:
+    """Build a DSPy Signature class from input/output JSON schemas.
+
+    Args:
+        input_schema: JSON Schema for inputs.
+        output_schema: JSON Schema for outputs.
+
+    Returns:
+        A dynamically created DSPy Signature class.
+    """
+    import dspy
+
+    annotations: dict[str, type] = {}
+    fields: dict[str, Any] = {}
+
+    # Input fields (skip names starting with '_' – incompatible with DSPy)
+    for name, prop in input_schema.get("properties", {}).items():
+        if name.startswith("_"):
+            continue
+        python_type = _json_schema_to_python_type(prop)
+        annotations[name] = python_type
+        desc = prop.get("description", "")
+        fields[name] = dspy.InputField(desc=desc)
+
+    # Output fields (skip names starting with '_' – incompatible with DSPy)
+    for name, prop in output_schema.get("properties", {}).items():
+        if name.startswith("_"):
+            continue
+        python_type = _json_schema_to_python_type(prop)
+        annotations[name] = python_type
+        desc = prop.get("description", "")
+        fields[name] = dspy.OutputField(desc=desc)
+
+    namespace = {
+        "__annotations__": annotations,
+        "__doc__": "Evaluate test case.",
+        **fields,
+    }
+
+    return type("EvalSignature", (dspy.Signature,), namespace)
+
+
+def _prepare_dspy_input(
+    entry_data: dict[str, Any],
+    input_schema: dict[str, Any],
+) -> dict[str, Any]:
+    """Prepare input kwargs for DSPy module from an entry's data.
+
+    Maps entry data fields to the input schema fields. If the entry
+    has a direct match, uses it. Otherwise, serialises the full entry
+    as a string for each expected input field.
+
+    Args:
+        entry_data: The data dict from a local data entry.
+        input_schema: The input JSON Schema.
+
+    Returns:
+        Dict of kwargs for the DSPy module call.
+    """
+    input_props = input_schema.get("properties", {})
+    kwargs: dict[str, Any] = {}
+
+    for field_name in input_props:
+        # Skip fields starting with '_' (incompatible with DSPy)
+        if field_name.startswith("_"):
+            continue
+        if field_name in entry_data:
+            val = entry_data[field_name]
+            # Ensure strings for string-typed fields
+            if isinstance(val, (dict, list)):
+                kwargs[field_name] = json.dumps(val)
+            else:
+                kwargs[field_name] = str(val) if val is not None else ""
+        else:
+            # Field not in entry, provide the full entry as context
+            kwargs[field_name] = json.dumps(entry_data)
+
+    return kwargs
+
+
+async def _save_evaluation_labels(
+    client: Any,
+    test_suite_id: Any,
+    results: list[Any],
+    output_schema: dict[str, Any],
+) -> None:
+    """Save evaluation results as labels on the remote server.
+
+    For each successful result, creates labels for each output metric.
+
+    Args:
+        client: RemoteClient instance.
+        test_suite_id: UUID of the test suite.
+        results: List of EvaluationResultItem.
+        output_schema: Output JSON schema with metric fields.
+    """
+    output_fields = list(output_schema.get("properties", {}).keys())
+    labels_batch: list[dict[str, Any]] = []
+
+    for result in results:
+        if result.error:
+            continue
+
+        output_data = result.output if isinstance(result.output, dict) else {}
+        metric_labels = []
+
+        for field_name in output_fields:
+            val = output_data.get(field_name)
+            if val is not None:
+                metric_labels.append(
+                    {
+                        "metric_id": field_name,  # Will be resolved server-side
+                        "value": val,
+                    }
+                )
+
+        if metric_labels:
+            labels_batch.append(
+                {
+                    "test_case_id": result.entry_id,
+                    "labels": metric_labels,
+                    "notes": "AI evaluation",
+                    "metadata": {
+                        "labeled_by": "ai",
+                        "sourcing": "recommended",
+                    },
+                }
+            )
+
+    if labels_batch:
+        # Send in batches to avoid overly large mutations
+        batch_size = 50
+        for i in range(0, len(labels_batch), batch_size):
+            batch = labels_batch[i : i + batch_size]
+            try:
+                await client.label_test_cases(
+                    test_suite_id=test_suite_id,
+                    labels=batch,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to save label batch %d: %s",
+                    i // batch_size + 1,
+                    e,
+                )
+
+
+# ============================================================================
 # Helpers
 # ============================================================================
+
+
+def _get_auth_token_from_context(context: dict[str, Any]) -> str | None:
+    """Extract the bearer token forwarded by the frontend.
+
+    The token is available in one of two places depending on transport:
+
+    * **WebSocket subscriptions** – Strawberry stores the graphql-ws
+      ``connectionParams`` payload in ``context["connection_params"]``
+      after receiving the ``connection_init`` message.  The frontend is
+      expected to send ``{ "authorization": "Bearer <token>" }``.
+
+    * **HTTP requests** – Strawberry always merges ``{"request": <Request>}``
+      into the context dict, so we can read the standard Authorization header.
+
+    Args:
+        context: The Strawberry GraphQL context dict.
+
+    Returns:
+        The raw JWT string (without "Bearer " prefix), or ``None``.
+    """
+    # WebSocket: read from connection_params (set by Strawberry from graphql-ws)
+    connection_params = context.get("connection_params")
+    if isinstance(connection_params, dict):
+        auth = (
+            connection_params.get("authorization")
+            or connection_params.get("Authorization")
+            or ""
+        )
+        if isinstance(auth, str) and auth.startswith("Bearer "):
+            return auth[7:]
+
+    # HTTP: read Authorization header from the Starlette Request object
+    request = context.get("request")
+    if request is not None and hasattr(request, "headers"):
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:]
+
+    return None
 
 
 def _dataset_to_type(d: dict[str, Any]) -> DatasetType:
@@ -364,7 +626,8 @@ class Subscription:
             remote_endpoint = os.environ.get(
                 "PIXIE_SERVER_URL", "http://localhost:8000/graphql"
             )
-            client = RemoteClient(remote_endpoint)
+            auth_token = _get_auth_token_from_context(info.context)
+            client = RemoteClient(remote_endpoint, auth_token=auth_token)
 
             test_suite_id = await client.create_test_suite(
                 name=input.name,
@@ -448,6 +711,242 @@ class Subscription:
                 message=f"Error: {str(e)}",
                 progress=0.0,
                 test_suite_id=test_suite_id,
+            )
+
+    @strawberry.subscription
+    async def evaluate_dataset(
+        self,
+        info: Info,
+        dataset_id: UUID,
+    ) -> AsyncGenerator[EvaluationUpdate, None]:
+        """Run evaluation on a dataset using the linked test suite's evaluator.
+
+        Pipeline:
+        1. Load dataset from local DB to get the linked test_suite_id
+        2. Fetch evaluator signature + saved program from remote server
+        3. Construct a DSPy ChainOfThought module
+        4. Load test cases in batches from local DB
+        5. Run each through the DSPy module
+        6. Save results as labels to remote server
+        7. Yield progress updates throughout
+
+        Args:
+            dataset_id: UUID of the local dataset to evaluate.
+
+        Yields:
+            EvaluationUpdate progress messages.
+        """
+        import dspy
+
+        from pixie_sdk.remote_client import RemoteClient
+
+        try:
+            # Step 1: Load dataset to get test_suite_id
+            yield EvaluationUpdate(
+                status=EvaluationStatus.LOADING,
+                message="Loading dataset...",
+                progress=0.0,
+            )
+
+            conn = info.context["db"]
+            dataset = await db.get_dataset(conn, dataset_id)
+            if not dataset:
+                yield EvaluationUpdate(
+                    status=EvaluationStatus.ERROR,
+                    message="Dataset not found",
+                    progress=0.0,
+                )
+                return
+
+            test_suite_id_str = dataset.get("test_suite_id")
+            if not test_suite_id_str:
+                yield EvaluationUpdate(
+                    status=EvaluationStatus.ERROR,
+                    message="Dataset is not linked to a test suite",
+                    progress=0.0,
+                )
+                return
+
+            ts_id = (
+                UUID(test_suite_id_str)
+                if isinstance(test_suite_id_str, str)
+                else test_suite_id_str
+            )
+
+            # Step 2: Fetch evaluator from remote server
+            yield EvaluationUpdate(
+                status=EvaluationStatus.LOADING,
+                message="Fetching evaluator from server...",
+                progress=0.05,
+            )
+
+            remote_endpoint = os.environ.get(
+                "PIXIE_SERVER_URL", "http://localhost:8000/graphql"
+            )
+            auth_token = _get_auth_token_from_context(info.context)
+            client = RemoteClient(remote_endpoint, auth_token=auth_token)
+            evaluator_data = await client.get_evaluator_with_signature(ts_id)
+
+            if not evaluator_data:
+                yield EvaluationUpdate(
+                    status=EvaluationStatus.ERROR,
+                    message="No evaluator found for this test suite",
+                    progress=0.0,
+                )
+                return
+
+            # Step 3: Construct DSPy module from signature
+            yield EvaluationUpdate(
+                status=EvaluationStatus.LOADING,
+                message="Building evaluation module...",
+                progress=0.1,
+            )
+
+            input_schema = evaluator_data["input_schema"]
+            output_schema = evaluator_data["output_schema"]
+            saved_program = evaluator_data.get("saved_program")
+
+            # Build DSPy signature from schemas
+            sig = _build_dspy_signature(input_schema, output_schema)
+            module = dspy.ChainOfThought(sig)
+
+            # Load saved program state if available
+            if saved_program and isinstance(saved_program, dict):
+                try:
+                    module.load_state(saved_program.get("state", saved_program))
+                except Exception as e:
+                    logger.warning("Could not load saved program state: %s", e)
+
+            # Step 4: Load all data entries from local DB
+            all_entries = await db.get_data_entries(
+                conn, dataset_id=dataset_id, offset=0, limit=999999
+            )
+            total_entries = len(all_entries)
+
+            if total_entries == 0:
+                yield EvaluationUpdate(
+                    status=EvaluationStatus.COMPLETE,
+                    message="No data entries to evaluate",
+                    progress=1.0,
+                    total=0,
+                    completed=0,
+                )
+                return
+
+            yield EvaluationUpdate(
+                status=EvaluationStatus.EVALUATING,
+                message=f"Starting evaluation of {total_entries} entries...",
+                progress=0.1,
+                total=total_entries,
+                completed=0,
+            )
+
+            # Build metric lookup from output_schema for saving labels
+            output_fields = output_schema.get("properties", {})
+
+            # Step 5-6: Evaluate in batches
+            completed = 0
+            all_results: list[EvaluationResultItem] = []
+
+            for batch_start in range(0, total_entries, EVAL_BATCH_SIZE):
+                batch = all_entries[batch_start : batch_start + EVAL_BATCH_SIZE]
+                batch_results: list[EvaluationResultItem] = []
+                for entry in batch:
+                    entry_id = str(entry["id"])
+                    entry_data = entry["data"]
+
+                    try:
+                        # Prepare input kwargs from entry data
+                        input_kwargs = _prepare_dspy_input(entry_data, input_schema)
+
+                        # Run DSPy module
+                        result = module(**input_kwargs)
+
+                        # Extract output fields
+                        output_dict: dict[str, Any] = {}
+                        for field_name in output_fields:
+                            val = getattr(result, field_name, None)
+                            output_dict[field_name] = val
+
+                        batch_results.append(
+                            EvaluationResultItem(
+                                entry_id=entry_id,
+                                output=JSON(output_dict),
+                            )
+                        )
+
+                    except Exception as exc:
+                        logger.error("Error evaluating entry %s: %s", entry_id, exc)
+                        batch_results.append(
+                            EvaluationResultItem(
+                                entry_id=entry_id,
+                                output=JSON({}),
+                                error=str(exc),
+                            )
+                        )
+
+                completed += len(batch)
+                all_results.extend(batch_results)
+                progress = 0.1 + 0.7 * (completed / total_entries)
+
+                batch_num = (batch_start // EVAL_BATCH_SIZE) + 1
+                total_batches = (total_entries + EVAL_BATCH_SIZE - 1) // EVAL_BATCH_SIZE
+
+                yield EvaluationUpdate(
+                    status=EvaluationStatus.EVALUATING,
+                    message=f"Evaluated batch {batch_num}/{total_batches}",
+                    progress=progress,
+                    total=total_entries,
+                    completed=completed,
+                    results=batch_results,
+                )
+
+            # Step 6: Save results as labels to remote server
+            yield EvaluationUpdate(
+                status=EvaluationStatus.SAVING,
+                message="Saving evaluation results...",
+                progress=0.85,
+                total=total_entries,
+                completed=completed,
+            )
+
+            try:
+                await _save_evaluation_labels(
+                    client=client,
+                    test_suite_id=ts_id,
+                    results=all_results,
+                    output_schema=output_schema,
+                )
+            except Exception as e:
+                logger.error("Error saving labels: %s", e)
+                # Don't fail the whole evaluation, just warn
+                yield EvaluationUpdate(
+                    status=EvaluationStatus.EVALUATING,
+                    message=f"Warning: failed to save some labels: {e}",
+                    progress=0.9,
+                    total=total_entries,
+                    completed=completed,
+                )
+
+            # Complete
+            successful = sum(1 for r in all_results if r.error is None)
+            yield EvaluationUpdate(
+                status=EvaluationStatus.COMPLETE,
+                message=(
+                    f"Evaluation complete: {successful}/{total_entries} "
+                    f"entries evaluated successfully"
+                ),
+                progress=1.0,
+                total=total_entries,
+                completed=completed,
+            )
+
+        except Exception as e:
+            logger.exception("Evaluation failed: %s", e)
+            yield EvaluationUpdate(
+                status=EvaluationStatus.ERROR,
+                message=f"Evaluation failed: {str(e)}",
+                progress=0.0,
             )
 
 

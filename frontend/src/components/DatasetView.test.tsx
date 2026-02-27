@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { DatasetView } from "./DatasetView";
@@ -39,12 +39,21 @@ vi.mock("./TestSuiteConfigDialog", () => ({
   TestSuiteConfigDialog: () => null,
 }));
 
-vi.mock("./EvaluatorSelectionDialog", () => ({
-  EvaluatorSelectionDialog: () => null,
-}));
-
 vi.mock("./EvaluationDialog", () => ({
-  EvaluationDialog: () => null,
+  EvaluationDialog: ({
+    open,
+    onClose,
+    datasetId,
+  }: {
+    open: boolean;
+    onClose: () => void;
+    datasetId: string;
+  }) =>
+    open ? (
+      <div data-testid="evaluation-dialog" data-dataset-id={datasetId}>
+        <button onClick={onClose}>Close</button>
+      </div>
+    ) : null,
 }));
 
 // ---- Mock Apollo hooks ----
@@ -183,5 +192,26 @@ describe("DatasetView", () => {
     expect(
       screen.getByRole("button", { name: /delete/i }),
     ).toBeInTheDocument();
+  });
+
+  it("should open EvaluationDialog directly when Evaluate is clicked", () => {
+    mockUseQueryReturn.data = {
+      getDataset: {
+        id: "ds-1",
+        fileName: "test.csv",
+        createdAt: "2026-01-01",
+        rowSchema: null,
+        testSuiteId: "ts-1",
+      },
+      getDataEntries: [],
+    };
+
+    renderWithRouter();
+    // Before click, dialog should not exist
+    expect(screen.queryByTestId("evaluation-dialog")).not.toBeInTheDocument();
+    // Click Evaluate on EvaluationCard mock
+    fireEvent.click(screen.getByRole("button", { name: /evaluate/i }));
+    // EvaluationDialog should now be rendered
+    expect(screen.getByTestId("evaluation-dialog")).toBeInTheDocument();
   });
 });

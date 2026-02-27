@@ -46,6 +46,18 @@ export const remoteClient = new ApolloClient({
 });
 
 // SDK local server client (with WebSocket support for subscriptions)
+// Auth middleware — forwards the JWT from the remote-server auth to the SDK
+// server so it can proxy authenticated requests to the remote server.
+const sdkAuthLink = setContext((_, { headers }) => {
+  const token = useAuthStore.getState().token;
+  return {
+    headers: {
+      ...headers,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+  };
+});
+
 const sdkHttpLink = new HttpLink({
   uri: SDK_SERVER_URL,
 });
@@ -53,6 +65,13 @@ const sdkHttpLink = new HttpLink({
 const sdkWsLink = new GraphQLWsLink(
   createClient({
     url: SDK_SERVER_WS_URL,
+    // Pass the auth token as a connection param so the SDK server can forward
+    // it to the remote pixie-server for authenticated proxy calls.
+    // The function is evaluated on every (re)connect to always use the latest token.
+    connectionParams: () => {
+      const token = useAuthStore.getState().token;
+      return token ? { authorization: `Bearer ${token}` } : {};
+    },
   }),
 );
 
@@ -65,7 +84,7 @@ const sdkLink = split(
     );
   },
   sdkWsLink,
-  sdkHttpLink,
+  sdkAuthLink.concat(sdkHttpLink),
 );
 
 export const sdkClient = new ApolloClient({
