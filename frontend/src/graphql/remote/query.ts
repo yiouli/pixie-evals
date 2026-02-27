@@ -97,3 +97,15 @@ export const GET_EVALUATOR_WITH_SIGNATURE = graphql(`
     }
   }
 `);
+
+export const LIST_DATA_ADAPTORS = graphql(`
+  query ListDataAdaptors($testSuiteId: UUID!) {
+    listDataAdaptors(testSuiteId: $testSuiteId) {
+      id
+      name
+      description
+      config
+      testSuite
+    }
+  }
+`);

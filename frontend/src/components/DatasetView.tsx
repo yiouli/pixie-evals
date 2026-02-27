@@ -22,7 +22,10 @@ import { EditableText } from "./EditableText";
 import { TestSuiteConfigDialog } from "./TestSuiteConfigDialog";
 import { EvaluationCard } from "./EvaluationCard";
 import { EvaluationDialog } from "./EvaluationDialog";
+import { DataAdaptorSelectionDialog } from "./DataAdaptorSelectionDialog";
 import { JsonSchemaViewer } from "@stoplight/json-schema-viewer";
+import { useTestSuites } from "../hooks/useTestSuites";
+import { areSchemasCompatible } from "../lib/schemaUtils";
 
 /**
  * Dataset detail view.
@@ -38,6 +41,8 @@ export function DatasetView() {
   const [evalDialogOpen, setEvalDialogOpen] = useState(false);
   const [datasetName, setDatasetName] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [adaptorDialogOpen, setAdaptorDialogOpen] = useState(false);
+  const [pendingLinkTestSuiteId, setPendingLinkTestSuiteId] = useState<string | null>(null);
 
   const {
     data: datasetData,
@@ -63,10 +68,19 @@ export function DatasetView() {
     client: sdkClient,
   });
 
+  const { testSuites } = useTestSuites();
+
   const dataset = datasetData?.getDataset;
   const entries = entriesData?.getDataEntries ?? [];
   const displayName = datasetName ?? dataset?.fileName ?? "Loading...";
   const testSuiteId = dataset?.testSuiteId as string | null | undefined;
+
+  // Parse dataset row schema
+  const datasetSchema = useMemo<Record<string, unknown>>(() => {
+    const raw = dataset?.rowSchema;
+    if (!raw) return {};
+    return typeof raw === "string" ? JSON.parse(raw) : (raw as Record<string, unknown>);
+  }, [dataset]);
 
   // Flatten entries for DataGrid
   const rows = useMemo(
@@ -101,12 +115,49 @@ export function DatasetView() {
 
   const handleLinkTestSuite = async (selectedTestSuiteId: string) => {
     if (!datasetId) return;
+
+    // Check schema compatibility
+    const selectedSuite = testSuites.find(
+      (ts) => (ts.id as string) === selectedTestSuiteId,
+    );
+    if (selectedSuite) {
+      const suiteConfig = selectedSuite.config as Record<string, unknown> | null;
+      const suiteInputSchema = (suiteConfig?.input_schema ??
+        suiteConfig?.inputSchema) as Record<string, unknown> | undefined;
+
+      if (
+        suiteInputSchema &&
+        Object.keys(datasetSchema).length > 0 &&
+        !areSchemasCompatible(datasetSchema, suiteInputSchema)
+      ) {
+        // Schemas are incompatible — open adaptor dialog
+        setPendingLinkTestSuiteId(selectedTestSuiteId);
+        setAdaptorDialogOpen(true);
+        return;
+      }
+    }
+
+    // Schemas are compatible (or we can't determine) — link directly
     await linkMutation({
       variables: {
         datasetId,
         testSuiteId: selectedTestSuiteId,
       },
     });
+    await refetchDataset();
+  };
+
+  /** Called when the adaptor dialog completes — proceed with the pending link. */
+  const handleAdaptorComplete = async () => {
+    setAdaptorDialogOpen(false);
+    if (!datasetId || !pendingLinkTestSuiteId) return;
+    await linkMutation({
+      variables: {
+        datasetId,
+        testSuiteId: pendingLinkTestSuiteId,
+      },
+    });
+    setPendingLinkTestSuiteId(null);
     await refetchDataset();
   };
 
@@ -242,6 +293,22 @@ export function DatasetView() {
           open={evalDialogOpen}
           onClose={() => setEvalDialogOpen(false)}
           datasetId={datasetId}
+        />
+      )}
+
+      {/* Data Adaptor selection dialog (shown on schema incompatibility) */}
+      {datasetId && pendingLinkTestSuiteId && (
+        <DataAdaptorSelectionDialog
+          open={adaptorDialogOpen}
+          onClose={() => {
+            setAdaptorDialogOpen(false);
+            setPendingLinkTestSuiteId(null);
+          }}
+          onComplete={handleAdaptorComplete}
+          testSuiteId={pendingLinkTestSuiteId}
+          datasetId={datasetId}
+          datasetSchema={datasetSchema}
+          datasetFileName={dataset?.fileName ?? "dataset"}
         />
       )}
     </Box>

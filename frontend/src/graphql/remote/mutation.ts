@@ -38,3 +38,19 @@ export const SKIP_LABELING = graphql(`
     skipLabeling(testSuiteId: $testSuiteId, testCaseId: $testCaseId)
   }
 `);
+
+export const CREATE_DATA_ADAPTOR = graphql(`
+  mutation CreateDataAdaptor(
+    $name: String!
+    $testSuiteId: UUID!
+    $config: DataAdaptorConfigInput!
+    $description: String
+  ) {
+    createDataAdaptor(
+      name: $name
+      testSuiteId: $testSuiteId
+      config: $config
+      description: $description
+    )
+  }
+`);

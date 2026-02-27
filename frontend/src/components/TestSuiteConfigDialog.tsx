@@ -9,6 +9,8 @@ import {
   Button,
   Typography,
   FormControl,
+  FormControlLabel,
+  Checkbox,
   InputLabel,
   Select,
   MenuItem,
@@ -18,13 +20,16 @@ import {
 } from "@mui/material";
 import { useQuery, useMutation } from "@apollo/client";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { sdkClient } from "../lib/apolloClient";
+import { sdkClient, remoteClient } from "../lib/apolloClient";
 import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
+import { CREATE_DATA_ADAPTOR } from "../graphql/remote/mutation";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { MetricsAutocomplete } from "./MetricsAutocomplete";
+import { DataAdaptorEditor } from "./DataAdaptorEditor";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
+import { computeOutputSchema, type AdaptorField } from "../lib/schemaUtils";
 import type { Metric } from "../lib/metricUtils";
 
 interface TestSuiteConfigDialogProps {
@@ -57,6 +62,11 @@ export function TestSuiteConfigDialog({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // Data adaptor state
+  const [adaptorEnabled, setAdaptorEnabled] = useState(false);
+  const [adaptorName, setAdaptorName] = useState("");
+  const [adaptorFields, setAdaptorFields] = useState<AdaptorField[]>([]);
+
   const { datasets } = useDatasets();
   const { createTestSuite } = useTestSuites();
   const [linkMutation] = useMutation(LINK_DATASET_TO_TEST_SUITE, {
@@ -86,6 +96,16 @@ export function TestSuiteConfigDialog({
     }
   }, [preselectedDatasetId]);
 
+  // Pre-fill adaptor name when dataset changes
+  useEffect(() => {
+    if (selectedDatasetId) {
+      const ds = datasets.find((d) => d.id === selectedDatasetId);
+      setAdaptorName(ds ? `from ${ds.fileName}` : "");
+    }
+    // Reset adaptor fields when dataset changes
+    setAdaptorFields([]);
+  }, [selectedDatasetId, datasets]);
+
   // Flatten entries for DataGrid preview
   const previewRows = useMemo(() => {
     const entries = entriesData?.getDataEntries ?? [];
@@ -109,13 +129,34 @@ export function TestSuiteConfigDialog({
       }));
   }, [previewRows]);
 
-  // Format schema for display
-  const schemaDisplay = useMemo(() => {
+  // Parse the raw dataset schema into a typed object
+  const parsedInputSchema = useMemo<Record<string, unknown>>(() => {
     const raw = datasetData?.getDataset?.rowSchema;
-    if (!raw) return null;
-    const schema = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return JSON.stringify(schema, null, 2);
+    if (!raw) return {};
+    return typeof raw === "string" ? JSON.parse(raw) : (raw as Record<string, unknown>);
   }, [datasetData]);
+
+  // Compute the output schema when adaptor is enabled and has valid fields
+  const adaptorOutputSchema = useMemo(() => {
+    if (!adaptorEnabled || adaptorFields.length === 0) return null;
+    const validFields = adaptorFields.filter(
+      (f) => f.schemaPath && f.name.trim(),
+    );
+    if (validFields.length === 0) return null;
+    return computeOutputSchema(parsedInputSchema, validFields);
+  }, [adaptorEnabled, adaptorFields, parsedInputSchema]);
+
+  // The effective input schema for the test suite:
+  // adaptor output schema when adaptor is configured, otherwise raw dataset schema
+  const effectiveInputSchema = useMemo(() => {
+    if (adaptorEnabled && adaptorOutputSchema) return adaptorOutputSchema;
+    return parsedInputSchema;
+  }, [adaptorEnabled, adaptorOutputSchema, parsedInputSchema]);
+
+  const effectiveSchemaDisplay = useMemo(() => {
+    if (!Object.keys(effectiveInputSchema).length) return null;
+    return JSON.stringify(effectiveInputSchema, null, 2);
+  }, [effectiveInputSchema]);
 
   const handleCreate = async () => {
     if (!selectedDatasetId) return;
@@ -123,10 +164,8 @@ export function TestSuiteConfigDialog({
     try {
       const metricIds = selectedMetrics.map((m) => m.id as string);
 
-      // Get input schema from dataset
-      const rawSchema = datasetData?.getDataset?.rowSchema;
-      const inputSchema =
-        typeof rawSchema === "string" ? JSON.parse(rawSchema) : rawSchema ?? {};
+      // Use effective schema (adaptor output or raw dataset schema)
+      const inputSchema = effectiveInputSchema;
 
       const id = await createTestSuite({
         name: name.trim(),
@@ -144,6 +183,29 @@ export function TestSuiteConfigDialog({
         },
       });
 
+      // Create data adaptor if enabled with valid fields
+      if (adaptorEnabled && adaptorFields.some((f) => f.schemaPath && f.name.trim())) {
+        const validFields = adaptorFields.filter(
+          (f) => f.schemaPath && f.name.trim(),
+        );
+        await remoteClient.mutate({
+          mutation: CREATE_DATA_ADAPTOR,
+          variables: {
+            name: adaptorName.trim() || "from dataset",
+            testSuiteId: id,
+            config: {
+              inputSchema: parsedInputSchema,
+              fields: validFields.map((f) => ({
+                name: f.name,
+                schema_path: f.schemaPath,
+                ...(f.description ? { description: f.description } : {}),
+              })),
+              metadata: { dataset_id: selectedDatasetId },
+            },
+          },
+        });
+      }
+
       onSuccess?.(id);
     } finally {
       setCreating(false);
@@ -155,6 +217,9 @@ export function TestSuiteConfigDialog({
     setDescription("");
     setSelectedMetrics([]);
     setSelectedDatasetId(preselectedDatasetId ?? null);
+    setAdaptorEnabled(false);
+    setAdaptorName("");
+    setAdaptorFields([]);
     onClose();
   };
 
@@ -230,18 +295,48 @@ export function TestSuiteConfigDialog({
             </Stack>
           </Box>
 
-          {/* Dataset preview (shown when dataset selected) */}
+          {/* Dataset preview and adaptor config (shown when dataset selected) */}
           {selectedDatasetId && (
             <Box sx={{ mt: 3 }}>
               <Divider sx={{ mb: 2 }} />
 
-              {schemaDisplay && (
+              {/* Data Adaptor toggle and editor */}
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={adaptorEnabled}
+                    onChange={(e) => setAdaptorEnabled(e.target.checked)}
+                  />
+                }
+                label="Configure Data Adaptor"
+                sx={{ mb: 1 }}
+              />
+
+              {adaptorEnabled && Object.keys(parsedInputSchema).length > 0 && (
+                <Paper
+                  variant="outlined"
+                  sx={{ p: 2, mb: 2, borderRadius: 2 }}
+                >
+                  <DataAdaptorEditor
+                    inputSchema={parsedInputSchema}
+                    fields={adaptorFields}
+                    onChange={setAdaptorFields}
+                    name={adaptorName}
+                    onNameChange={setAdaptorName}
+                  />
+                </Paper>
+              )}
+
+              {/* Effective Input Schema */}
+              {effectiveSchemaDisplay && (
                 <Box sx={{ mb: 2 }}>
                   <Typography
                     variant="subtitle2"
                     sx={{ fontWeight: 600, mb: 1 }}
                   >
-                    Input Schema
+                    {adaptorEnabled && adaptorOutputSchema
+                      ? "Transformed Input Schema"
+                      : "Input Schema"}
                   </Typography>
                   <Paper
                     variant="outlined"
@@ -261,7 +356,7 @@ export function TestSuiteConfigDialog({
                         fontFamily: "monospace",
                       }}
                     >
-                      {schemaDisplay}
+                      {effectiveSchemaDisplay}
                     </Box>
                   </Paper>
                 </Box>
@@ -298,7 +393,10 @@ export function TestSuiteConfigDialog({
               !name.trim() ||
               !selectedDatasetId ||
               creating ||
-              selectedMetrics.length === 0
+              selectedMetrics.length === 0 ||
+              (adaptorEnabled &&
+                (!adaptorName.trim() ||
+                  !adaptorFields.some((f) => f.schemaPath && f.name.trim())))
             }
           >
             {creating ? "Creating..." : "Create Evaluation"}
