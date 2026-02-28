@@ -259,13 +259,79 @@ type UploadedDataset = UploadFileMutation["uploadFile"];
 
 #### GraphQL Codegen Workflow
 
-When adding or changing a GraphQL operation:
+Codegen introspects **live running servers** to pull the schema. Both servers must be reachable before you run codegen.
 
-1. **Add/edit the operation** in the appropriate `.ts` file under `graphql/sdk/` or `graphql/remote/`. Use the `graphql()` function from the corresponding `generated/*/gql` module.
-2. **Ensure the server is running** (`localhost:8000` for remote, `localhost:8100` for SDK).
-3. **Run `pnpm codegen`** to regenerate types in `generated/`.
-4. **Import the named constant** (e.g., `LIST_DATASETS`) in your hook/component.
-5. **Never import `gql` from `@apollo/client`** for defining operations — only use the generated `graphql()` function.
+##### Step 1 — Read the READMEs to understand how to start each server
+
+Before starting any server, read the relevant README to find the correct startup command and any required environment variables:
+
+- **pixie-evals root**: [`README.md`](../README.md) — covers `make dev-sdk`, `make dev-frontend`, environment prerequisites.
+- **SDK server**: [`sdk/README.md`](../sdk/README.md) — Python FastAPI server, port `8100`.
+- **Remote pixie-server**: `pixie-server/README.md` (sibling repo at `~/repo/pixie-server`) — port `8000`, requires Supabase env vars.
+
+##### Step 2 — Start the required servers
+
+The codegen config (`frontend/codegen.ts`) introspects:
+- `http://localhost:8000/graphql` → remote pixie-server schema (generates `src/generated/remote/`)
+- `http://localhost:8100/graphql` → local SDK server schema (generates `src/generated/sdk/`)
+
+```bash
+# Terminal 1 — Start local SDK server (port 8100)
+make dev-sdk
+# Equivalent: cd sdk && uv run python -m pixie_sdk.server
+
+# Terminal 2 — Start remote pixie-server (port 8000)
+# Check pixie-server/README.md for the exact command and required .env variables
+# Typically: cd ../pixie-server && source .venv/bin/activate && uvicorn pixie_server.server:app --reload
+```
+
+##### Step 3 — Verify servers are reachable
+
+Before running codegen, confirm both endpoints respond:
+
+```bash
+curl -s http://localhost:8100/graphql -d '{"query":"{__typename}"}' -H 'Content-Type: application/json'
+# Expected: {"data":{"__typename":"Query"}}
+
+curl -s http://localhost:8000/graphql -d '{"query":"{__typename}"}' -H 'Content-Type: application/json'
+# Expected: {"data":{"__typename":"Query"}}
+```
+
+If a server is unreachable, fix the startup issue before proceeding.
+
+##### Step 4 — Add or edit GraphQL operations
+
+Add/edit operations in the appropriate `.ts` file under `graphql/sdk/` or `graphql/remote/`. Use the `graphql()` function from the corresponding `generated/*/gql` module.
+
+##### Step 5 — Run codegen
+
+```bash
+# From the repo root:
+make codegen
+
+# Or just the frontend:
+cd frontend && pnpm codegen
+
+# Or just the SDK remote client (ariadne-codegen):
+make codegen-sdk
+# Equivalent: cd sdk && uv run ariadne-codegen
+```
+
+This regenerates all files under `frontend/src/generated/` and `sdk/pixie_sdk/remote_client/generated/`. **Never edit these files manually.**
+
+##### Step 6 — Use the generated types
+
+- **Import the named constant** (e.g., `LIST_DATASETS`) in your hook/component.
+- **Never import `gql` from `@apollo/client`** for defining operations — only use the generated `graphql()` function.
+- Derive TypeScript types from the generated output (see *No Hand-Written Types* section above).
+
+##### Step 7 — Verify and commit
+
+```bash
+cd frontend && pnpm typecheck   # must pass with zero errors
+cd frontend && pnpm test        # must pass
+git add frontend/src/generated  # commit generated files together with operation changes
+```
 
 #### When Client-Only Types Are Acceptable
 
@@ -366,48 +432,100 @@ Export the public API from `index.ts`; consumers import from the module, not int
 
 ## Documentation Requirements
 
-**Every code change must include corresponding documentation updates.**
+**Every code change must include corresponding documentation updates. Documentation is not optional and must be completed before considering a task done.**
 
-- **README.md**: Update when CLI commands, features, or project structure change.
-- **Docstrings / JSDoc**: Every public function, class, hook, and component must be documented. Update when behavior changes.
-- **Inline comments**: Add for non-obvious logic.
+### What to Keep Up to Date
+
+- **README.md**: Update when CLI commands, features, dependencies, or project structure change. Keep the feature table, command examples, and directory tree in sync with the actual code.
+- **Docstrings / JSDoc**: Every public function, class, hook, and component must be documented. Update docstrings whenever you change a function's behaviour, parameters, or return values.
+  - **Frontend (TypeScript)**: Use JSDoc (`/** ... */`) on all exported functions, hooks, components, and their props interfaces.
+  - **Backend (Python)**: Use Google-style or reStructuredText docstrings on all public functions, classes, and methods.
+- **Inline comments**: Add for non-obvious logic, especially in feature extraction, GraphQL resolvers, and state derivations.
+- **`specs/`**: Update architecture or data-flow specs when the overall design changes.
+
+### Changelog per Feature
+
+**Every non-trivial feature or bug fix must have a changelog entry.**
+
+1. Create or update a file under `changelogs/` named after the feature, e.g. `changelogs/evaluator-optimization.md`.
+2. The file must include:
+   - **What changed** and why.
+   - **Files affected** (modules, components, hooks).
+   - **Migration notes** if any API or schema changed.
+3. Commit the changelog file together with the implementation.
+
+```
+changelogs/
+  evaluator-optimization.md
+  dataset-upload-improvements.md
+  active-learning-scoring.md
+```
+
+### Documentation Generation Commands
+
+After changing docstrings or the public API surface, regenerate any auto-generated docs:
+
+```bash
+# Frontend — type-check (also surfaces missing JSDoc errors in strict mode)
+cd frontend && pnpm typecheck
+
+# If the project has a doc-generation script, run it and commit the output
+# e.g. python scripts/generate_docs.py
+```
+
+### Documentation Checklist (Before Every Commit)
+
+1. ✅ All new/changed functions, hooks, and components have accurate docstrings / JSDoc.
+2. ✅ `README.md` reflects current features, commands, and project structure.
+3. ✅ `specs/` is up to date with any architectural changes.
+4. ✅ A `changelogs/<feature>.md` file exists for each non-trivial change.
+5. ✅ Auto-generated docs have been regenerated and committed.
 
 ---
 
 ## Type Checking Requirements
 
-**Every code change must pass type checking.**
+**Every code change must pass type checking — verified after EVERY incremental step, not just at the end.**
 
-- **Backend**: `mypy` (if applicable)
-- **Frontend**: `pnpm typecheck` (runs `tsc --noEmit`)
-- Fix all type errors before committing. Never use `any` or `@ts-ignore` as workarounds.
+- **Backend**: `cd sdk && uv run mypy pixie_sdk/ --ignore-missing-imports` (or `make lint`)
+- **Frontend**: `cd frontend && pnpm typecheck` (runs `tsc --noEmit`)
+- Fix all type errors **immediately** before moving to the next increment. Never use `any` or `@ts-ignore` as workarounds.
+- **Do not batch type-check runs.** Run after every file edit.
 
 ---
 
 ## Incremental Development with TDD
 
-Follow a strict **test-driven, incremental development** workflow:
+Follow a strict **test-driven, incremental development** workflow. **TDD and type checking are per-increment disciplines — they must happen after every small change, not just when the full feature is complete.**
 
 ### Before Each Change
 
-1. **Understand scope**: Break the task into the smallest meaningful increments. Each increment should be independently testable.
+1. **Understand scope**: Break the task into the smallest meaningful increments. Each increment should be independently testable — think one function, one component, one hook at a time.
 2. **Write or update tests first**: Define expected behavior in test files before implementation.
 3. **Run existing tests**: Verify all tests pass before making changes.
-   - Backend: `pytest -v`
-   - Frontend: `pnpm test`
+   - Backend: `cd sdk && uv run pytest -v` (or `make test-sdk`)
+   - Frontend: `cd frontend && pnpm test`
 
-### During Each Change
+### During Each Change (REPEAT FOR EVERY INCREMENT)
+
+> ⚠️ **CRITICAL**: Steps 4–6 must be repeated for each small increment. Do NOT accumulate multiple changes and verify at the end.
 
 4. **Implement the minimum code** to make the new test(s) pass. Avoid scope creep — one concern per increment.
-5. **Run the full test suite** after each implementation step to confirm nothing is broken.
-6. **Refactor only with green tests**: If you want to restructure code, do it as a separate step with all tests passing before and after.
+5. **Run the full test suite immediately** after each file edit:
+   - Backend: `cd sdk && uv run pytest -v`
+   - Frontend: `cd frontend && pnpm test`
+6. **Run type checking immediately** after each file edit:
+   - Backend: `make lint`
+   - Frontend: `cd frontend && pnpm typecheck`
+7. **Fix any test failures or type errors before proceeding** to the next increment. Never carry forward broken tests or type errors.
+8. **Refactor only with green tests**: If you want to restructure code, do it as a separate step with all tests and type checks passing before and after.
 
-### After Each Change
+### After Each Increment Is Complete
 
-7. **Verify all tests pass**: Run the full suite and confirm 100% pass rate.
-8. **Verify type checking passes**: `pnpm typecheck` for frontend.
-9. **Update documentation**: Apply the documentation requirements above.
-10. **Review the diff**: Before considering the change complete, review what changed and ensure no unintended side effects.
+9. **Verify all tests still pass**: Run the full suite once more.
+10. **Verify type checking still passes**: Run `pnpm typecheck` / `make lint` once more.
+11. **Update documentation**: Apply the documentation requirements above — docstrings, README, changelog.
+12. **Review the diff**: Before considering the increment done, review what changed and ensure no unintended side effects.
 
 ### Test Quality Guidelines
 
@@ -733,10 +851,20 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 
 ## Summary Checklist
 
-Before every commit:
+### Per-Increment (repeat for every small change)
 
-1. ✅ Write/update tests for your changes
-2. ✅ Run `pnpm test` (frontend) / `pytest -v` (backend) — all tests must pass
-3. ✅ Run `pnpm typecheck` (frontend) — zero type errors allowed
-4. ✅ Verify functionality works as expected
-5. ✅ Update documentation (README, docstrings, comments)
+1. ✅ Write the test first — define expected behaviour before implementing
+2. ✅ Implement the minimum code to make the test pass
+3. ✅ Run `pnpm test` / `pytest -v` immediately — fix failures before proceeding
+4. ✅ Run `pnpm typecheck` / `make lint` immediately — fix type errors before proceeding
+
+### Before Every Commit
+
+5. ✅ All tests pass (full suite)
+6. ✅ Zero type errors (`pnpm typecheck` / `make lint`)
+7. ✅ Functionality verified end-to-end
+8. ✅ Docstrings / JSDoc added or updated for all changed public APIs
+9. ✅ `README.md` updated if commands, features, or structure changed
+10. ✅ `changelogs/<feature>.md` created or updated
+11. ✅ Auto-generated docs regenerated and committed (if applicable)
+12. ✅ Generated GraphQL types (`frontend/src/generated/`, `sdk/.../generated/`) committed alongside operation changes
