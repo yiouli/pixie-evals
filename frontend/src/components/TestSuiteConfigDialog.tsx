@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -17,13 +17,17 @@ import {
   Stack,
   Divider,
   Paper,
+  LinearProgress,
+  Alert,
 } from "@mui/material";
-import { useQuery, useMutation } from "@apollo/client";
+import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { sdkClient, remoteClient } from "../lib/apolloClient";
 import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
+import { CREATE_TEST_SUITE_PROGRESS } from "../graphql/sdk/subscription";
 import { CREATE_DATA_ADAPTOR } from "../graphql/remote/mutation";
+import { CreationStatus } from "../generated/sdk/graphql";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { MetricsAutocomplete } from "./MetricsAutocomplete";
 import { DataAdaptorEditor } from "./DataAdaptorEditor";
@@ -62,13 +66,29 @@ export function TestSuiteConfigDialog({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // Subscription progress state
+  const [creationMessage, setCreationMessage] = useState("");
+  const [creationProgress, setCreationProgress] = useState(0);
+  const [creationStatus, setCreationStatus] = useState<CreationStatus | null>(null);
+  const [createdTestSuiteId, setCreatedTestSuiteId] = useState<string | null>(null);
+  const [subscriptionInput, setSubscriptionInput] = useState<{
+    datasetId: string;
+    input: {
+      name: string;
+      description?: string | null;
+      metricIds: string[];
+      inputSchema: unknown;
+    };
+  } | null>(null);
+  const postCreationDoneRef = useRef(false);
+
   // Data adaptor state
   const [adaptorEnabled, setAdaptorEnabled] = useState(false);
   const [adaptorName, setAdaptorName] = useState("");
   const [adaptorFields, setAdaptorFields] = useState<AdaptorField[]>([]);
 
   const { datasets } = useDatasets();
-  const { createTestSuite } = useTestSuites();
+  const { refetch: refetchTestSuites } = useTestSuites();
   const [linkMutation] = useMutation(LINK_DATASET_TO_TEST_SUITE, {
     client: sdkClient,
   });
@@ -158,61 +178,115 @@ export function TestSuiteConfigDialog({
     return JSON.stringify(effectiveInputSchema, null, 2);
   }, [effectiveInputSchema]);
 
-  const handleCreate = async () => {
-    if (!selectedDatasetId) return;
-    setCreating(true);
-    try {
-      const metricIds = selectedMetrics.map((m) => m.id as string);
+  const isRunning =
+    creating &&
+    creationStatus !== CreationStatus.Complete &&
+    creationStatus !== CreationStatus.Error;
 
-      // Use effective schema (adaptor output or raw dataset schema)
-      const inputSchema = effectiveInputSchema;
+  // Subscribe to test suite creation progress (embed + upload pipeline)
+  const { error: subscriptionError } = useSubscription(
+    CREATE_TEST_SUITE_PROGRESS,
+    {
+      client: sdkClient,
+      variables: subscriptionInput!,
+      skip: !creating || !subscriptionInput,
+      onData: ({ data: subData }) => {
+        const update = subData?.data?.createTestSuiteProgress;
+        if (!update) return;
+        setCreationStatus(update.status);
+        setCreationMessage(update.message);
+        setCreationProgress(update.progress * 100);
+        if (update.testSuiteId) {
+          setCreatedTestSuiteId(update.testSuiteId as string);
+        }
+      },
+    },
+  );
 
-      const id = await createTestSuite({
-        name: name.trim(),
-        description: description.trim(),
-        metricIds,
-        datasetId: selectedDatasetId,
-        inputSchema,
-      });
+  // Post-creation steps: link dataset, create adaptor, navigate
+  useEffect(() => {
+    if (
+      creationStatus !== CreationStatus.Complete ||
+      !createdTestSuiteId ||
+      postCreationDoneRef.current
+    )
+      return;
+    postCreationDoneRef.current = true;
 
-      // Auto-link the dataset to the newly created test suite
-      await linkMutation({
-        variables: {
-          datasetId: selectedDatasetId,
-          testSuiteId: id,
-        },
-      });
-
-      // Create data adaptor if enabled with valid fields
-      if (adaptorEnabled && adaptorFields.some((f) => f.schemaPath && f.name.trim())) {
-        const validFields = adaptorFields.filter(
-          (f) => f.schemaPath && f.name.trim(),
-        );
-        await remoteClient.mutate({
-          mutation: CREATE_DATA_ADAPTOR,
-          variables: {
-            name: adaptorName.trim() || "from dataset",
-            testSuiteId: id,
-            config: {
-              inputSchema: parsedInputSchema,
-              fields: validFields.map((f) => ({
-                name: f.name,
-                schema_path: f.schemaPath,
-                ...(f.description ? { description: f.description } : {}),
-              })),
-              metadata: { dataset_id: selectedDatasetId },
+    (async () => {
+      try {
+        // Link dataset to the newly created test suite
+        if (selectedDatasetId) {
+          await linkMutation({
+            variables: {
+              datasetId: selectedDatasetId,
+              testSuiteId: createdTestSuiteId,
             },
-          },
-        });
-      }
+          });
+        }
 
-      onSuccess?.(id);
-    } finally {
-      setCreating(false);
-    }
+        // Create data adaptor if enabled
+        if (
+          adaptorEnabled &&
+          adaptorFields.some((f) => f.schemaPath && f.name.trim())
+        ) {
+          const validFields = adaptorFields.filter(
+            (f) => f.schemaPath && f.name.trim(),
+          );
+          await remoteClient.mutate({
+            mutation: CREATE_DATA_ADAPTOR,
+            variables: {
+              name: adaptorName.trim() || "from dataset",
+              testSuiteId: createdTestSuiteId,
+              config: {
+                inputSchema: parsedInputSchema,
+                fields: validFields.map((f) => ({
+                  name: f.name,
+                  schema_path: f.schemaPath,
+                  ...(f.description ? { description: f.description } : {}),
+                })),
+                metadata: { dataset_id: selectedDatasetId },
+              },
+            },
+          });
+        }
+
+        // Refresh the test suites list in Apollo cache
+        await refetchTestSuites();
+
+        onSuccess?.(createdTestSuiteId);
+      } catch (e) {
+        console.error("Post-creation error:", e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creationStatus, createdTestSuiteId]);
+
+  /** Start the subscription-based creation pipeline. */
+  const handleCreate = () => {
+    if (!selectedDatasetId) return;
+    const metricIds = selectedMetrics.map((m) => m.id as string);
+    const inputSchema = effectiveInputSchema;
+
+    setCreationMessage("Starting...");
+    setCreationProgress(0);
+    setCreationStatus(null);
+    setCreatedTestSuiteId(null);
+    postCreationDoneRef.current = false;
+    setSubscriptionInput({
+      datasetId: selectedDatasetId,
+      input: {
+        name: name.trim(),
+        description: description.trim() || null,
+        metricIds,
+        inputSchema,
+      },
+    });
+    setCreating(true);
   };
 
   const handleClose = () => {
+    if (isRunning) return;
     setName("");
     setDescription("");
     setSelectedMetrics([]);
@@ -220,14 +294,61 @@ export function TestSuiteConfigDialog({
     setAdaptorEnabled(false);
     setAdaptorName("");
     setAdaptorFields([]);
+    setCreating(false);
+    setCreationMessage("");
+    setCreationProgress(0);
+    setCreationStatus(null);
+    setCreatedTestSuiteId(null);
+    setSubscriptionInput(null);
+    postCreationDoneRef.current = false;
     onClose();
   };
 
   return (
     <>
-      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={isRunning ? undefined : handleClose} maxWidth="md" fullWidth>
         <DialogTitle>Create Evaluation</DialogTitle>
         <DialogContent>
+          {creating ? (
+            /* Progress view — shown while subscription is running */
+            <Box sx={{ py: 4 }}>
+              {subscriptionError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  Connection error: {subscriptionError.message}
+                </Alert>
+              )}
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {creationMessage || "Starting..."}
+              </Typography>
+              <LinearProgress
+                variant={
+                  isRunning && creationProgress === 0
+                    ? "indeterminate"
+                    : "determinate"
+                }
+                value={creationProgress}
+                sx={{ height: 8, borderRadius: 4, mb: 1 }}
+              />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block" }}
+              >
+                {creationProgress.toFixed(0)}% complete
+              </Typography>
+              {creationStatus === CreationStatus.Complete && (
+                <Alert severity="success" sx={{ mt: 2 }}>
+                  {creationMessage}
+                </Alert>
+              )}
+              {creationStatus === CreationStatus.Error && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  {creationMessage}
+                </Alert>
+              )}
+            </Box>
+          ) : (
+          <>
           <TextField
             fullWidth
             label="Evaluation Name"
@@ -383,24 +504,45 @@ export function TestSuiteConfigDialog({
               </Box>
             </Box>
           )}
+          </>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleCreate}
-            disabled={
-              !name.trim() ||
-              !selectedDatasetId ||
-              creating ||
-              selectedMetrics.length === 0 ||
-              (adaptorEnabled &&
-                (!adaptorName.trim() ||
-                  !adaptorFields.some((f) => f.schemaPath && f.name.trim())))
-            }
-          >
-            {creating ? "Creating..." : "Create Evaluation"}
-          </Button>
+          {creating ? (
+            <Button
+              onClick={handleClose}
+              disabled={isRunning}
+              variant={
+                creationStatus === CreationStatus.Error ? "outlined" : "contained"
+              }
+            >
+              {creationStatus === CreationStatus.Complete
+                ? "Done"
+                : creationStatus === CreationStatus.Error
+                  ? "Close"
+                  : "Creating..."}
+            </Button>
+          ) : (
+            <>
+              <Button onClick={handleClose}>Cancel</Button>
+              <Button
+                variant="contained"
+                onClick={handleCreate}
+                disabled={
+                  !name.trim() ||
+                  !selectedDatasetId ||
+                  selectedMetrics.length === 0 ||
+                  (adaptorEnabled &&
+                    (!adaptorName.trim() ||
+                      !adaptorFields.some(
+                        (f) => f.schemaPath && f.name.trim(),
+                      )))
+                }
+              >
+                Create Evaluation
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 

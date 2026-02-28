@@ -38,3 +38,14 @@ export const OPTIMIZE_EVALUATOR = graphql(`
     }
   }
 `);
+
+export const IMPORT_TEST_CASES_PROGRESS = graphql(`
+  subscription ImportTestCasesProgress($datasetId: UUID!, $testSuiteId: UUID!) {
+    importTestCasesProgress(datasetId: $datasetId, testSuiteId: $testSuiteId) {
+      status
+      message
+      progress
+      testSuiteId
+    }
+  }
+`);

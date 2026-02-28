@@ -23,6 +23,7 @@ import { MetricChip } from "./MetricChip";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
 import { OptimizationDialog } from "./OptimizationDialog";
+import { ImportTestCasesDialog } from "./ImportTestCasesDialog";
 import { useTestSuites } from "../hooks/useTestSuites";
 import {
   GET_TEST_SUITE_METRICS,
@@ -48,6 +49,7 @@ export function TestSuiteView() {
   const [labelingOpen, setLabelingOpen] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>();
   const [optimizationOpen, setOptimizationOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Fetch test suite data from remote server
   const { testSuites, loading: suitesLoading } = useTestSuites();
@@ -86,6 +88,7 @@ export function TestSuiteView() {
     removeTestCase,
     skipLabeling,
     nextCandidateId,
+    refetch: refetchTestCases,
     totalCount,
   } = useEvaluation(testSuiteId ?? "");
 
@@ -217,6 +220,7 @@ export function TestSuiteView() {
           <Button
             variant="outlined"
             startIcon={<FileUploadRoundedIcon />}
+            onClick={() => setImportOpen(true)}
           >
             Import Test Cases
           </Button>
@@ -338,6 +342,16 @@ export function TestSuiteView() {
           open={optimizationOpen}
           onClose={() => setOptimizationOpen(false)}
           testSuiteId={testSuiteId}
+        />
+      )}
+
+      {/* Import Test Cases Dialog */}
+      {testSuiteId && (
+        <ImportTestCasesDialog
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          testSuiteId={testSuiteId}
+          onComplete={() => void refetchTestCases()}
         />
       )}
     </Box>

@@ -154,6 +154,13 @@ export function useEvaluation(testSuiteId: string) {
   const nextCandidateId: string | undefined =
     (candidatesData?.getLabelingCandidates as string[] | undefined)?.[0];
 
+  /** Refetch all test case data (IDs, cases, and candidates). */
+  const refetch = useCallback(async () => {
+    await refetchIds();
+    await refetchCases();
+    await refetchCandidates();
+  }, [refetchIds, refetchCases, refetchCandidates]);
+
   return {
     testCases: casesData?.getTestCasesWithLabel ?? [],
     loading: idsLoading || casesLoading,
@@ -162,6 +169,7 @@ export function useEvaluation(testSuiteId: string) {
     removeTestCase,
     skipLabeling,
     nextCandidateId,
+    refetch,
     page,
     pageSize,
     setPage,

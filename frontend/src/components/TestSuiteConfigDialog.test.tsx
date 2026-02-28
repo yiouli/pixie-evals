@@ -59,6 +59,7 @@ vi.mock("@apollo/client", () => ({
     };
   }),
   useMutation: () => [mockLinkMutate, { loading: false }],
+  useSubscription: () => ({ error: undefined }),
   gql: (strings: TemplateStringsArray) => strings.join(""),
 }));
 

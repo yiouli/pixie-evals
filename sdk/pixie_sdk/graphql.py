@@ -780,6 +780,121 @@ class Subscription:
             )
 
     @strawberry.subscription
+    async def import_test_cases_progress(
+        self,
+        info: Info,
+        dataset_id: UUID,
+        test_suite_id: UUID,
+    ) -> AsyncGenerator[TestSuiteCreationProgress, None]:
+        """Subscribe to test case import progress.
+
+        Embeds data entries from a local dataset and uploads them as
+        test cases to an existing remote test suite.
+
+        Args:
+            dataset_id: UUID of the local dataset to import from.
+            test_suite_id: UUID of the remote test suite to import into.
+
+        Yields:
+            TestSuiteCreationProgress updates.
+        """
+        from pixie_sdk.remote_client import RemoteClient
+
+        try:
+            yield TestSuiteCreationProgress(
+                status=CreationStatus.EMBEDDING,
+                message="Preparing to import test cases...",
+                progress=0.0,
+                test_suite_id=test_suite_id,
+            )
+
+            remote_endpoint = os.environ.get(
+                "PIXIE_SERVER_URL", "http://localhost:8000/graphql"
+            )
+            auth_token = _get_auth_token_from_context(info.context)
+            client = RemoteClient(remote_endpoint, auth_token=auth_token)
+
+            # Get all data entries from the local dataset
+            conn = info.context["db"]
+            all_entries = await db.get_data_entries(
+                conn, dataset_id=dataset_id, offset=0, limit=999999
+            )
+
+            total_entries = len(all_entries)
+            if total_entries == 0:
+                yield TestSuiteCreationProgress(
+                    status=CreationStatus.COMPLETE,
+                    message="No entries found to import.",
+                    progress=1.0,
+                    test_suite_id=test_suite_id,
+                )
+                return
+
+            embedded_cases: list[dict[str, Any]] = []
+
+            # Batch-embed all data entries
+            for i in range(0, total_entries, EMBED_BATCH_SIZE):
+                batch = all_entries[i : i + EMBED_BATCH_SIZE]
+                batch_data = [entry["data"] for entry in batch]
+
+                embeddings = await embed.embed_batch(batch_data)
+
+                for entry, embedding in zip(batch, embeddings):
+                    embedded_cases.append(
+                        {
+                            "input": entry["data"],
+                            "embedding": embedding,
+                            "entry_id": str(entry["id"]),
+                        }
+                    )
+
+                progress = 0.5 * (i + len(batch)) / total_entries
+                batch_num = (i // EMBED_BATCH_SIZE) + 1
+                total_batches = (
+                    total_entries + EMBED_BATCH_SIZE - 1
+                ) // EMBED_BATCH_SIZE
+                yield TestSuiteCreationProgress(
+                    status=CreationStatus.EMBEDDING,
+                    message=f"Embedding batch {batch_num}/{total_batches}",
+                    progress=progress,
+                    test_suite_id=test_suite_id,
+                )
+
+            # Upload test cases to remote server in batches
+            total_cases = len(embedded_cases)
+            for i in range(0, total_cases, UPLOAD_BATCH_SIZE):
+                batch = embedded_cases[i : i + UPLOAD_BATCH_SIZE]
+                await client.add_test_cases(test_suite_id, batch)
+
+                progress = 0.5 + 0.5 * (i + len(batch)) / total_cases
+                batch_num = (i // UPLOAD_BATCH_SIZE) + 1
+                total_batches = (
+                    total_cases + UPLOAD_BATCH_SIZE - 1
+                ) // UPLOAD_BATCH_SIZE
+                yield TestSuiteCreationProgress(
+                    status=CreationStatus.UPLOADING,
+                    message=f"Uploading batch {batch_num}/{total_batches}",
+                    progress=progress,
+                    test_suite_id=test_suite_id,
+                )
+
+            # Complete
+            yield TestSuiteCreationProgress(
+                status=CreationStatus.COMPLETE,
+                message=f"Successfully imported {total_entries} test cases!",
+                progress=1.0,
+                test_suite_id=test_suite_id,
+            )
+
+        except Exception as e:
+            yield TestSuiteCreationProgress(
+                status=CreationStatus.ERROR,
+                message=f"Error: {str(e)}",
+                progress=0.0,
+                test_suite_id=test_suite_id,
+            )
+
+    @strawberry.subscription
     async def evaluate_dataset(
         self,
         info: Info,
