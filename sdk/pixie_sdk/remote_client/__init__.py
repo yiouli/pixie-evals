@@ -235,3 +235,118 @@ class RemoteClient:
             },
         )
         return data.get("labelTestCases", [])
+
+    async def get_manual_labels_after_cutoff(
+        self,
+        test_suite_id: UUID,
+    ) -> list[dict[str, Any]]:
+        """Get test cases with manual labels after the latest optimization cutoff.
+
+        Args:
+            test_suite_id: UUID of the test suite.
+
+        Returns:
+            List of dicts with 'test_case' and 'label' keys.
+        """
+        query = """
+        query GetManualLabelsAfterCutoff($testSuiteId: UUID!) {
+            getManualLabelsAfterCutoff(testSuiteId: $testSuiteId) {
+                testCase {
+                    id
+                    description
+                    testSuite
+                    createdAt
+                }
+                label {
+                    id
+                    metric
+                    testCase
+                    value
+                    labeledAt
+                    labeler
+                    notes
+                    metadata
+                }
+            }
+        }
+        """
+        data = await self._execute(
+            query,
+            variables={"testSuiteId": str(test_suite_id)},
+        )
+        return data.get("getManualLabelsAfterCutoff", [])
+
+    async def get_optimization_label_stats(
+        self,
+        test_suite_id: UUID,
+    ) -> dict[str, Any]:
+        """Get manual label counts before and after the latest optimization cutoff.
+
+        Args:
+            test_suite_id: UUID of the test suite.
+
+        Returns:
+            Dict with 'before_cutoff', 'after_cutoff', and 'cutoff_date'.
+        """
+        query = """
+        query GetOptimizationLabelStats($testSuiteId: UUID!) {
+            getOptimizationLabelStats(testSuiteId: $testSuiteId) {
+                beforeCutoff
+                afterCutoff
+                cutoffDate
+            }
+        }
+        """
+        data = await self._execute(
+            query,
+            variables={"testSuiteId": str(test_suite_id)},
+        )
+        stats = data.get("getOptimizationLabelStats", {})
+        return {
+            "before_cutoff": stats.get("beforeCutoff", 0),
+            "after_cutoff": stats.get("afterCutoff", 0),
+            "cutoff_date": stats.get("cutoffDate"),
+        }
+
+    async def create_evaluator(
+        self,
+        test_suite_id: UUID,
+        program_json: str,
+        training_cutoff: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Create an optimized evaluator on the remote server.
+
+        Args:
+            test_suite_id: UUID of the test suite.
+            program_json: Serialised DSPy program JSON string.
+            training_cutoff: ISO format cutoff datetime string.
+            metadata: Optional metadata dict.
+
+        Returns:
+            UUID string of the created evaluator.
+        """
+        query = """
+        mutation CreateEvaluator(
+            $testSuiteId: UUID!,
+            $programJson: String!,
+            $trainingCutoff: DateTime!,
+            $metadata: JSON
+        ) {
+            createEvaluator(
+                testSuiteId: $testSuiteId,
+                programJson: $programJson,
+                trainingCutoff: $trainingCutoff,
+                metadata: $metadata
+            )
+        }
+        """
+        variables: dict[str, Any] = {
+            "testSuiteId": str(test_suite_id),
+            "programJson": program_json,
+            "trainingCutoff": training_cutoff,
+        }
+        if metadata:
+            variables["metadata"] = metadata
+        data = await self._execute(query, variables=variables)
+        return data.get("createEvaluator", "")

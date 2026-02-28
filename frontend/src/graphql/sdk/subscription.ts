@@ -27,3 +27,14 @@ export const EVALUATE_DATASET = graphql(`
     }
   }
 `);
+
+export const OPTIMIZE_EVALUATOR = graphql(`
+  subscription OptimizeEvaluator($testSuiteId: UUID!) {
+    optimizeEvaluator(testSuiteId: $testSuiteId) {
+      status
+      message
+      progress
+      evaluatorId
+    }
+  }
+`);

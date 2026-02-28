@@ -17,12 +17,17 @@ import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import AutoFixHighRoundedIcon from "@mui/icons-material/AutoFixHighRounded";
 import { EditableText } from "./EditableText";
 import { MetricChip } from "./MetricChip";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
+import { OptimizationDialog } from "./OptimizationDialog";
 import { useTestSuites } from "../hooks/useTestSuites";
-import { GET_TEST_SUITE_METRICS } from "../graphql/remote/query";
+import {
+  GET_TEST_SUITE_METRICS,
+  GET_OPTIMIZATION_LABEL_STATS,
+} from "../graphql/remote/query";
 import { remoteClient } from "../lib/apolloClient";
 import { parseMetricConfig } from "../lib/metricUtils";
 import { useAuthStore } from "../lib/store";
@@ -42,6 +47,7 @@ export function TestSuiteView() {
   const navigate = useNavigate();
   const [labelingOpen, setLabelingOpen] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>();
+  const [optimizationOpen, setOptimizationOpen] = useState(false);
 
   // Fetch test suite data from remote server
   const { testSuites, loading: suitesLoading } = useTestSuites();
@@ -55,6 +61,23 @@ export function TestSuiteView() {
     },
   );
   const metrics = metricsData?.getTestSuiteMetrics ?? [];
+
+  // Fetch optimization label stats to determine if optimize button should be enabled
+  const { data: labelStatsData } = useQuery(
+    GET_OPTIMIZATION_LABEL_STATS,
+    {
+      client: remoteClient,
+      variables: { testSuiteId: testSuiteId ?? "" },
+      skip: !isAuthenticated || !testSuiteId,
+    },
+  );
+  const labelStats = labelStatsData?.getOptimizationLabelStats;
+  const canOptimize = useMemo(() => {
+    if (!labelStats) return false;
+    const threshold = Math.max(5, 0.2 * labelStats.beforeCutoff);
+    return labelStats.afterCutoff > threshold;
+  }, [labelStats]);
+
   const {
     testCases,
     loading: casesLoading,
@@ -197,6 +220,24 @@ export function TestSuiteView() {
           >
             Import Test Cases
           </Button>
+          <Tooltip
+            title={
+              canOptimize
+                ? "Optimize evaluator with new manual labels"
+                : `Need more manual labels after cutoff (${labelStats?.afterCutoff ?? 0} available, need > ${labelStats ? Math.max(5, Math.round(0.2 * labelStats.beforeCutoff)) : 5})`
+            }
+          >
+            <span>
+              <Button
+                variant="outlined"
+                startIcon={<AutoFixHighRoundedIcon />}
+                onClick={() => setOptimizationOpen(true)}
+                disabled={!canOptimize}
+              >
+                Optimize Evaluator
+              </Button>
+            </span>
+          </Tooltip>
           <Button
             variant="outlined"
             color="error"
@@ -290,6 +331,15 @@ export function TestSuiteView() {
         onSave={handleSaveLabel}
         onSkip={handleSkip}
       />
+
+      {/* Optimization Dialog */}
+      {testSuiteId && (
+        <OptimizationDialog
+          open={optimizationOpen}
+          onClose={() => setOptimizationOpen(false)}
+          testSuiteId={testSuiteId}
+        />
+      )}
     </Box>
   );
 }

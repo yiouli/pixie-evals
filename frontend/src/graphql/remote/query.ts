@@ -98,6 +98,16 @@ export const GET_EVALUATOR_WITH_SIGNATURE = graphql(`
   }
 `);
 
+export const GET_OPTIMIZATION_LABEL_STATS = graphql(`
+  query GetOptimizationLabelStats($testSuiteId: UUID!) {
+    getOptimizationLabelStats(testSuiteId: $testSuiteId) {
+      beforeCutoff
+      afterCutoff
+      cutoffDate
+    }
+  }
+`);
+
 export const LIST_DATA_ADAPTORS = graphql(`
   query ListDataAdaptors($testSuiteId: UUID!) {
     listDataAdaptors(testSuiteId: $testSuiteId) {

@@ -98,6 +98,18 @@ class EvaluationStatus(enum.Enum):
     ERROR = "error"
 
 
+@strawberry.enum
+class OptimizationStatus(enum.Enum):
+    """Status steps for the evaluator optimization pipeline."""
+
+    LOADING = "loading"
+    PREPARING = "preparing"
+    OPTIMIZING = "optimizing"
+    SAVING = "saving"
+    COMPLETE = "complete"
+    ERROR = "error"
+
+
 @strawberry.type
 class EvaluationResultItem:
     """Result of evaluating a single test case."""
@@ -127,6 +139,21 @@ class EvaluationUpdate:
     """Number of completed evaluations so far."""
     results: list[EvaluationResultItem] | None = None
     """Batch of results, present during EVALUATING updates."""
+
+
+@strawberry.type
+class OptimizationUpdate:
+    """Progress update emitted during evaluator optimization.
+
+    Sent over a GraphQL subscription so the frontend can show
+    real-time status to the user.
+    """
+
+    status: OptimizationStatus
+    message: str
+    progress: float  # 0.0 – 1.0
+    evaluator_id: str | None = None
+    """UUID of the created evaluator, set on COMPLETE."""
 
 
 # ============================================================================
@@ -284,7 +311,7 @@ async def _save_evaluation_labels(
             if val is not None:
                 metric_labels.append(
                     {
-                        "metric_id": field_name,  # Will be resolved server-side
+                        "metric_id": field_name,
                         "value": val,
                     }
                 )
@@ -303,7 +330,6 @@ async def _save_evaluation_labels(
             )
 
     if labels_batch:
-        # Send in batches to avoid overly large mutations
         batch_size = 50
         for i in range(0, len(labels_batch), batch_size):
             batch = labels_batch[i : i + batch_size]
@@ -318,6 +344,46 @@ async def _save_evaluation_labels(
                     i // batch_size + 1,
                     e,
                 )
+
+
+async def _load_evaluator_module(
+    client: Any,
+    test_suite_id: Any,
+) -> tuple[Any, dict[str, Any], dict[str, Any]] | None:
+    """Load the evaluator DSPy module for a test suite.
+
+    Fetches the evaluator signature and optional saved program from the
+    remote server, builds a DSPy ChainOfThought module, and loads the
+    saved state if available.
+
+    Args:
+        client: RemoteClient instance.
+        test_suite_id: UUID of the test suite.
+
+    Returns:
+        Tuple of (module, input_schema, output_schema), or None if
+        no evaluator is found.
+    """
+    import dspy
+
+    evaluator_data = await client.get_evaluator_with_signature(test_suite_id)
+    if not evaluator_data:
+        return None
+
+    input_schema = evaluator_data["input_schema"]
+    output_schema = evaluator_data["output_schema"]
+    saved_program = evaluator_data.get("saved_program")
+
+    sig = _build_dspy_signature(input_schema, output_schema)
+    module = dspy.ChainOfThought(sig)
+
+    if saved_program and isinstance(saved_program, dict):
+        try:
+            module.load_state(saved_program.get("state", saved_program))
+        except Exception as e:
+            logger.warning("Could not load saved program state: %s", e)
+
+    return module, input_schema, output_schema
 
 
 # ============================================================================
@@ -787,9 +853,9 @@ class Subscription:
             )
             auth_token = _get_auth_token_from_context(info.context)
             client = RemoteClient(remote_endpoint, auth_token=auth_token)
-            evaluator_data = await client.get_evaluator_with_signature(ts_id)
 
-            if not evaluator_data:
+            result = await _load_evaluator_module(client, ts_id)
+            if not result:
                 yield EvaluationUpdate(
                     status=EvaluationStatus.ERROR,
                     message="No evaluator found for this test suite",
@@ -797,27 +863,14 @@ class Subscription:
                 )
                 return
 
-            # Step 3: Construct DSPy module from signature
+            module, input_schema, output_schema = result
+
+            # Step 3: Build evaluation module
             yield EvaluationUpdate(
                 status=EvaluationStatus.LOADING,
                 message="Building evaluation module...",
                 progress=0.1,
             )
-
-            input_schema = evaluator_data["input_schema"]
-            output_schema = evaluator_data["output_schema"]
-            saved_program = evaluator_data.get("saved_program")
-
-            # Build DSPy signature from schemas
-            sig = _build_dspy_signature(input_schema, output_schema)
-            module = dspy.ChainOfThought(sig)
-
-            # Load saved program state if available
-            if saved_program and isinstance(saved_program, dict):
-                try:
-                    module.load_state(saved_program.get("state", saved_program))
-                except Exception as e:
-                    logger.warning("Could not load saved program state: %s", e)
 
             # Step 4: Load all data entries from local DB
             all_entries = await db.get_data_entries(
@@ -862,7 +915,9 @@ class Subscription:
                         input_kwargs = _prepare_dspy_input(entry_data, input_schema)
 
                         # Run DSPy module
-                        with dspy.context(lm=dspy.LM("openai/gpt-4o-mini")):
+                        with dspy.context(
+                            lm=dspy.LM("openai/gpt-4o-mini", cache=False)
+                        ):
                             result = module(**input_kwargs)
 
                         # Extract output fields
@@ -949,6 +1004,230 @@ class Subscription:
             yield EvaluationUpdate(
                 status=EvaluationStatus.ERROR,
                 message=f"Evaluation failed: {str(e)}",
+                progress=0.0,
+            )
+
+    @strawberry.subscription
+    async def optimize_evaluator(
+        self,
+        info: Info,
+        test_suite_id: UUID,
+    ) -> AsyncGenerator[OptimizationUpdate, None]:
+        """Optimize the evaluator using manual labels as training examples.
+
+        Pipeline:
+        1. Fetch manual labels after the latest optimization cutoff
+        2. Load the current evaluator module from remote server
+        3. Build DSPy Example objects from labeled data
+        4. Run DSPy BootstrapFewShot optimization
+        5. Save the optimized evaluator back to remote server
+
+        Args:
+            test_suite_id: UUID of the remote test suite.
+
+        Yields:
+            OptimizationUpdate progress messages.
+        """
+        import dspy
+        from dotenv import load_dotenv
+
+        from pixie_sdk.remote_client import RemoteClient
+
+        try:
+            load_dotenv()  # Load OPENAI_API_KEY from .env if present
+
+            # Step 1: Fetch training examples from remote server
+            yield OptimizationUpdate(
+                status=OptimizationStatus.LOADING,
+                message="Fetching training examples...",
+                progress=0.0,
+            )
+
+            remote_endpoint = os.environ.get(
+                "PIXIE_SERVER_URL", "http://localhost:8000/graphql"
+            )
+            auth_token = _get_auth_token_from_context(info.context)
+            client = RemoteClient(remote_endpoint, auth_token=auth_token)
+
+            labeled_data = await client.get_manual_labels_after_cutoff(test_suite_id)
+
+            if not labeled_data:
+                yield OptimizationUpdate(
+                    status=OptimizationStatus.ERROR,
+                    message="No manual labels found after cutoff",
+                    progress=0.0,
+                )
+                return
+
+            yield OptimizationUpdate(
+                status=OptimizationStatus.LOADING,
+                message=f"Found {len(labeled_data)} labeled entries",
+                progress=0.1,
+            )
+
+            # Step 2: Load current evaluator module
+            yield OptimizationUpdate(
+                status=OptimizationStatus.LOADING,
+                message="Loading evaluator...",
+                progress=0.15,
+            )
+
+            result = await _load_evaluator_module(client, test_suite_id)
+            if not result:
+                yield OptimizationUpdate(
+                    status=OptimizationStatus.ERROR,
+                    message="No evaluator found for this test suite",
+                    progress=0.0,
+                )
+                return
+
+            module, input_schema, output_schema = result
+
+            # Step 3: Build DSPy examples from labeled data
+            yield OptimizationUpdate(
+                status=OptimizationStatus.PREPARING,
+                message="Building training examples...",
+                progress=0.2,
+            )
+
+            # Group labels by test case ID to build complete examples
+            examples_by_tc: dict[str, dict[str, Any]] = {}
+            for item in labeled_data:
+                tc = item["testCase"]
+                label = item["label"]
+                tc_id = tc["id"]
+
+                if tc_id not in examples_by_tc:
+                    # Parse test case description as input data
+                    desc = tc.get("description", "{}")
+                    try:
+                        input_data = json.loads(desc) if isinstance(desc, str) else desc
+                    except (json.JSONDecodeError, TypeError):
+                        input_data = {"description": desc}
+
+                    examples_by_tc[tc_id] = {
+                        "inputs": _prepare_dspy_input(input_data, input_schema),
+                        "outputs": {},
+                    }
+
+                # Add label value to outputs keyed by metric UUID
+                metric_id = str(label["metric"])
+                examples_by_tc[tc_id]["outputs"][metric_id] = label["value"]
+
+            # Build DSPy Example objects with input keys marked
+            input_keys = [
+                k for k in input_schema.get("properties", {}) if not k.startswith("_")
+            ]
+
+            trainset: list[Any] = []
+            for tc_data in examples_by_tc.values():
+                example_dict = {**tc_data["inputs"], **tc_data["outputs"]}
+                example = dspy.Example(**example_dict).with_inputs(*input_keys)
+                trainset.append(example)
+
+            if not trainset:
+                yield OptimizationUpdate(
+                    status=OptimizationStatus.ERROR,
+                    message="Could not build training examples from labeled data",
+                    progress=0.0,
+                )
+                return
+
+            yield OptimizationUpdate(
+                status=OptimizationStatus.PREPARING,
+                message=f"Built {len(trainset)} training examples",
+                progress=0.3,
+            )
+
+            # Step 4: Run DSPy optimization
+            yield OptimizationUpdate(
+                status=OptimizationStatus.OPTIMIZING,
+                message="Running optimization (this may take a few minutes)...",
+                progress=0.4,
+            )
+
+            output_keys = [
+                k for k in output_schema.get("properties", {}) if not k.startswith("_")
+            ]
+
+            def _optimization_metric(
+                example: Any, pred: Any, trace: Any = None
+            ) -> float:
+                """Score prediction against labeled example."""
+                total = len(output_keys)
+                if total == 0:
+                    return 1.0
+                matches = 0
+                for key in output_keys:
+                    expected = getattr(example, key, None)
+                    predicted = getattr(pred, key, None)
+                    if expected is not None and predicted is not None:
+                        if (
+                            str(expected).strip().lower()
+                            == str(predicted).strip().lower()
+                        ):
+                            matches += 1
+                return matches / total
+
+            with dspy.context(lm=dspy.LM("openai/gpt-4o-mini", cache=False)):
+                optimizer = dspy.BootstrapFewShot(
+                    metric=_optimization_metric,
+                    max_bootstrapped_demos=4,
+                    max_labeled_demos=8,
+                )
+                optimized_module = optimizer.compile(module, trainset=trainset)
+
+            yield OptimizationUpdate(
+                status=OptimizationStatus.OPTIMIZING,
+                message="Optimization complete",
+                progress=0.8,
+            )
+
+            # Step 5: Save optimized evaluator to remote server
+            yield OptimizationUpdate(
+                status=OptimizationStatus.SAVING,
+                message="Saving optimized evaluator...",
+                progress=0.85,
+            )
+
+            # Serialize optimized program to JSON via temp file
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                tmp_path = tmp.name
+            optimized_module.save(tmp_path)
+            with open(tmp_path) as f:
+                program_json = f.read()
+            os.unlink(tmp_path)
+
+            training_cutoff = datetime.utcnow().isoformat()
+            metadata = {
+                "optimizer": "BootstrapFewShot",
+                "training_examples": len(trainset),
+                "max_bootstrapped_demos": 4,
+                "max_labeled_demos": 8,
+            }
+
+            evaluator_id = await client.create_evaluator(
+                test_suite_id=test_suite_id,
+                program_json=program_json,
+                training_cutoff=training_cutoff,
+                metadata=metadata,
+            )
+
+            yield OptimizationUpdate(
+                status=OptimizationStatus.COMPLETE,
+                message=(
+                    f"Evaluator optimized successfully "
+                    f"with {len(trainset)} training examples"
+                ),
+                progress=1.0,
+                evaluator_id=evaluator_id,
+            )
+
+        except Exception as e:
+            logger.exception("Optimization failed: %s", e)
+            yield OptimizationUpdate(
+                status=OptimizationStatus.ERROR,
+                message=f"Optimization failed: {str(e)}",
                 progress=0.0,
             )
 
