@@ -72,7 +72,7 @@ file for a given test suite:
 
 ```graphql
 mutation {
-  scaffoldLabelingComponent(testSuiteId: "<uuid>") 
+  scaffoldLabelingComponent(testSuiteId: "<uuid>")
 }
 ```
 

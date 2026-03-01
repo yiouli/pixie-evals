@@ -255,4 +255,3 @@ What happens:
 - `test_scaffold.py`: Assert `.html` and `.d.ts` files created with correct names (snake_case) and content (placeholder present, suite name in title).
 - `test_components_init.py`: Assert `set_components_dir` updates the dir; assert `PLACEHOLDER_ATTR` equals `"pixie-evals-labeling-input"`.
 - `test_e2e_labeling.py`: Full integration — create a test suite + entry, scaffold, serve, fetch `/labeling/<name>?id=<id>`, assert `window.INPUT` is injected with the correct JSON.
-
