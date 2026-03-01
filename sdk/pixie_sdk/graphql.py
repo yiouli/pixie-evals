@@ -592,21 +592,15 @@ class Query:
 
         test_case = await client.get_test_case(test_case_id)
         if test_case is None:
-            raise ValueError(
-                f"Test case '{test_case_id}' not found on remote server"
-            )
+            raise ValueError(f"Test case '{test_case_id}' not found on remote server")
 
         suite_id = test_case.get("testSuite")
         if not suite_id:
-            raise ValueError(
-                f"Test case '{test_case_id}' has no test suite"
-            )
+            raise ValueError(f"Test case '{test_case_id}' has no test suite")
 
         suite = await client.get_test_suite(UUID(str(suite_id)))
         if suite is None:
-            raise ValueError(
-                f"Test suite '{suite_id}' not found on remote server"
-            )
+            raise ValueError(f"Test suite '{suite_id}' not found on remote server")
 
         suite_name: str = suite.get("name", "")
         slot = to_snake_case(suite_name) if suite_name else ""
