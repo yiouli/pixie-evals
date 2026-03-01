@@ -42,13 +42,21 @@ pixie-evals/
 │   ├── remote_client/          # GraphQL operations & vendored schema
 │   │   ├── schema.graphql
 │   │   └── queries.graphql
+│   ├── labeling/               # User-authored HTML labeling pages (one per test suite)
+│   │   ├── my_test_suite.html  # Custom labeling page (edit this)
+│   │   └── my_test_suite.d.ts  # TypeScript types for INPUT variable (editor support)
 │   ├── pixie_sdk/
 │   │   ├── server.py           # FastAPI server & entry point
 │   │   ├── db.py               # SQLite operations
 │   │   ├── graphql.py          # Strawberry GraphQL schema
 │   │   ├── ingest.py           # File loading & schema inference
 │   │   ├── embed.py            # OpenAI embedding utilities
-│   │   ├── templates/          # Jinja2 labeling UI templates
+│   │   ├── components/         # Custom labeling UI component system
+│   │   │   ├── __init__.py     # Public API: set_components_dir(), PLACEHOLDER_ATTR
+│   │   │   ├── registry.py     # In-memory slot → HTML path store
+│   │   │   ├── scanner.py      # Discovers .html files at startup
+│   │   │   ├── server.py       # FastAPI routes: /labeling/*, /api/inputs/*
+│   │   │   └── scaffold.py     # Generates .html + .d.ts scaffold files
 │   │   └── remote_client/      # Generated client (ariadne-codegen)
 │   │       └── generated/
 │   └── tests/
@@ -57,7 +65,12 @@ pixie-evals/
 │       ├── test_graphql.py
 │       ├── test_ingest.py
 │       ├── test_embed.py
-│       └── test_server.py
+│       ├── test_server.py
+│       ├── test_components_init.py
+│       ├── test_registry.py
+│       ├── test_scanner.py
+│       ├── test_scaffold.py
+│       └── test_e2e_labeling.py
 └── frontend/                   # React web frontend
     ├── package.json            # pnpm dependencies
     ├── vite.config.ts
@@ -149,7 +162,7 @@ make codegen
 ### SDK (Python)
 - **FastAPI** + **Strawberry GraphQL** — local API server
 - **SQLite** (aiosqlite) — local dataset storage
-- **Jinja2** — labeling UI rendering
+- **Custom HTML labeling pages** — user-authored `.html` files with server-side input injection
 - **Polars** + **PyArrow** + **genson** — file ingestion & schema inference
 - **OpenAI** — text embeddings
 - **ariadne-codegen** — typed client for remote pixie-server
