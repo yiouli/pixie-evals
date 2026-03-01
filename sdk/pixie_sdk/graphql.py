@@ -652,19 +652,20 @@ class Mutation:
         info: Info,
         test_suite_id: UUID,
     ) -> str:
-        """Generate a scaffold TSX labeling component for a test suite.
+        """Generate a scaffold HTML labeling page for a test suite.
 
         Fetches the test suite name and input schema from the remote
-        server and creates a ``.tsx`` file in the components directory.
+        server and creates an ``.html`` file and a companion ``.d.ts``
+        type definition file in the components directory.
 
         Args:
             test_suite_id: UUID of the remote test suite.
 
         Returns:
-            The relative path of the created ``.tsx`` file.
+            The relative path of the created ``.html`` file.
         """
-        from pixie_sdk._components import get_components_dir
-        from pixie_sdk._components._scaffold import scaffold_component
+        from pixie_sdk.components import get_components_dir
+        from pixie_sdk.components.scaffold import scaffold_component
         from pixie_sdk.remote_client import RemoteClient
 
         client = RemoteClient()
@@ -675,12 +676,12 @@ class Mutation:
             else Path.cwd() / components_dir
         )
 
-        result = await scaffold_component(
+        html_path, _dts_path = await scaffold_component(
             test_suite_id=test_suite_id,
             components_dir=resolved,
             remote_client=client,
         )
-        return str(result)
+        return str(html_path)
 
 
 # ============================================================================

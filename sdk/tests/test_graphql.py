@@ -371,8 +371,8 @@ class TestMutationScaffoldLabelingComponent:
     """Test the scaffold_labeling_component mutation."""
 
     @pytest.mark.asyncio
-    @patch("pixie_sdk._components.get_components_dir")
-    @patch("pixie_sdk._components._scaffold.scaffold_component", new_callable=AsyncMock)
+    @patch("pixie_sdk.components.get_components_dir")
+    @patch("pixie_sdk.components.scaffold.scaffold_component", new_callable=AsyncMock)
     @patch("pixie_sdk.remote_client.RemoteClient")
     async def test_returns_path(
         self, mock_rc_cls, mock_scaffold, mock_get_dir, tmp_path
@@ -382,21 +382,23 @@ class TestMutationScaffoldLabelingComponent:
 
         mock_get_dir.return_value = tmp_path / "labeling"
         ts_id = uuid4()
-        mock_scaffold.return_value = Path(f"labeling/{ts_id}.tsx")
+        html_path = Path("labeling/trace_comparison.html")
+        dts_path = Path("labeling/trace_comparison.d.ts")
+        mock_scaffold.return_value = (html_path, dts_path)
 
         mutation = Mutation()
         result = await mutation.scaffold_labeling_component(
             info=_mock_info(), test_suite_id=ts_id
         )
-        assert result == f"labeling/{ts_id}.tsx"
+        assert result == "labeling/trace_comparison.html"
         mock_scaffold.assert_called_once()
         # Verify test_suite_id was passed
         call_kwargs = mock_scaffold.call_args
         assert call_kwargs.kwargs["test_suite_id"] == ts_id
 
     @pytest.mark.asyncio
-    @patch("pixie_sdk._components.get_components_dir")
-    @patch("pixie_sdk._components._scaffold.scaffold_component", new_callable=AsyncMock)
+    @patch("pixie_sdk.components.get_components_dir")
+    @patch("pixie_sdk.components.scaffold.scaffold_component", new_callable=AsyncMock)
     @patch("pixie_sdk.remote_client.RemoteClient")
     async def test_raises_on_not_found(
         self, mock_rc_cls, mock_scaffold, mock_get_dir, tmp_path

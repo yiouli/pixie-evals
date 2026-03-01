@@ -1,4 +1,4 @@
-"""Tests for pixie_sdk._components._registry — in-memory component store."""
+"""Tests for pixie_sdk.components.registry — in-memory component store."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pixie_sdk._components._registry import (
+from pixie_sdk.components.registry import (
     RegisteredComponent,
     clear,
     get_component,
@@ -30,12 +30,10 @@ class TestRegisteredComponent:
         """All fields should be accessible on an instance."""
         c = RegisteredComponent(
             slot="demo",
-            src_path=Path("/a/demo.tsx"),
-            bundle_path=Path("/tmp/demo.js"),
+            src_path=Path("/a/demo.html"),
         )
         assert c.slot == "demo"
-        assert c.src_path == Path("/a/demo.tsx")
-        assert c.bundle_path == Path("/tmp/demo.js")
+        assert c.src_path == Path("/a/demo.html")
 
 
 class TestGetComponent:
@@ -49,8 +47,7 @@ class TestGetComponent:
         """Looking up a registered slot returns the component."""
         comp = RegisteredComponent(
             slot="abc",
-            src_path=Path("/x/abc.tsx"),
-            bundle_path=Path("/y/abc.js"),
+            src_path=Path("/x/abc.html"),
         )
         set_component("abc", comp)
         assert get_component("abc") is comp
@@ -63,8 +60,7 @@ class TestSetComponent:
         """A registered component can be retrieved."""
         comp = RegisteredComponent(
             slot="foo",
-            src_path=Path("/a/foo.tsx"),
-            bundle_path=Path("/b/foo.js"),
+            src_path=Path("/a/foo.html"),
         )
         set_component("foo", comp)
         assert get_component("foo") is comp
@@ -72,10 +68,12 @@ class TestSetComponent:
     def test_overwrite(self):
         """Registering the same slot twice overwrites the previous entry."""
         comp1 = RegisteredComponent(
-            slot="x", src_path=Path("/1.tsx"), bundle_path=Path("/1.js")
+            slot="x",
+            src_path=Path("/1.html"),
         )
         comp2 = RegisteredComponent(
-            slot="x", src_path=Path("/2.tsx"), bundle_path=Path("/2.js")
+            slot="x",
+            src_path=Path("/2.html"),
         )
         set_component("x", comp1)
         set_component("x", comp2)
@@ -89,31 +87,23 @@ class TestListSlots:
         """Empty registry returns empty list."""
         assert list_slots() == []
 
-    def test_sorted(self):
-        """Slots are returned in sorted order."""
-        for name in ["charlie", "alpha", "bravo"]:
-            set_component(
-                name,
-                RegisteredComponent(
-                    slot=name,
-                    src_path=Path(f"/{name}.tsx"),
-                    bundle_path=Path(f"/{name}.js"),
-                ),
-            )
-        assert list_slots() == ["alpha", "bravo", "charlie"]
+    def test_sorted_order(self):
+        """list_slots returns slot names in sorted order."""
+        set_component(
+            "beta", RegisteredComponent(slot="beta", src_path=Path("/b.html"))
+        )
+        set_component(
+            "alpha", RegisteredComponent(slot="alpha", src_path=Path("/a.html"))
+        )
+        assert list_slots() == ["alpha", "beta"]
 
 
 class TestClear:
     """Test clear()."""
 
-    def test_removes_all(self):
+    def test_clears_all(self):
         """clear() empties the registry."""
-        set_component(
-            "x",
-            RegisteredComponent(
-                slot="x", src_path=Path("/x.tsx"), bundle_path=Path("/x.js")
-            ),
-        )
-        assert list_slots() != []
+        set_component("x", RegisteredComponent(slot="x", src_path=Path("/x.html")))
+        assert list_slots() == ["x"]
         clear()
         assert list_slots() == []

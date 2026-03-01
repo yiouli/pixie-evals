@@ -1,10 +1,14 @@
-"""Tests for pixie_sdk._components — public API (__init__.py)."""
+"""Tests for pixie_sdk.components — public API (__init__.py)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from pixie_sdk._components import get_components_dir, set_components_dir
+from pixie_sdk.components import (
+    PLACEHOLDER_ATTR,
+    get_components_dir,
+    set_components_dir,
+)
 
 
 class TestComponentsDir:
@@ -12,7 +16,6 @@ class TestComponentsDir:
 
     def test_default_is_labeling(self):
         """The default components dir is 'labeling'."""
-        # Reset to default.
         set_components_dir("labeling")
         assert get_components_dir() == Path("labeling")
 
@@ -20,14 +23,12 @@ class TestComponentsDir:
         """set_components_dir accepts a string."""
         set_components_dir("./my_ui")
         assert get_components_dir() == Path("./my_ui")
-        # Restore default.
         set_components_dir("labeling")
 
     def test_set_path(self):
         """set_components_dir accepts a Path."""
         set_components_dir(Path("/absolute/path"))
         assert get_components_dir() == Path("/absolute/path")
-        # Restore default.
         set_components_dir("labeling")
 
     def test_round_trip(self):
@@ -35,3 +36,11 @@ class TestComponentsDir:
         set_components_dir("custom_folder")
         assert get_components_dir() == Path("custom_folder")
         set_components_dir("labeling")
+
+
+class TestPlaceholderAttr:
+    """Test the PLACEHOLDER_ATTR constant."""
+
+    def test_placeholder_attr_value(self):
+        """PLACEHOLDER_ATTR is the expected attribute name."""
+        assert PLACEHOLDER_ATTR == "pixie-evals-labeling-input"

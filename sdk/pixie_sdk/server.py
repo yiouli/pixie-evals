@@ -1,12 +1,11 @@
 """FastAPI server for the Pixie SDK.
 
 Serves the local Strawberry GraphQL API for dataset management,
-custom TSX labeling components (bundled with esbuild), and proxies
-to the remote pixie-server.  The server runs on the user's local
-machine — raw data never leaves.
+custom HTML labeling pages, and proxies to the remote pixie-server.
+The server runs on the user's local machine — raw data never leaves.
 
 See Also:
-    ``_components`` — the custom labeling UI component system.
+    ``components`` — the custom labeling UI component system.
 """
 
 from __future__ import annotations
@@ -21,9 +20,9 @@ from fastapi.staticfiles import StaticFiles
 from strawberry.fastapi import GraphQLRouter
 
 from pixie_sdk import db
-from pixie_sdk._components import get_components_dir
-from pixie_sdk._components._scanner import scan_and_register
-from pixie_sdk._components._server import router as components_router
+from pixie_sdk.components import get_components_dir
+from pixie_sdk.components.scanner import scan_and_register
+from pixie_sdk.components.server import router as components_router
 from pixie_sdk.graphql import schema
 
 # ============================================================================
@@ -32,7 +31,6 @@ from pixie_sdk.graphql import schema
 
 SDK_PORT = int(os.environ.get("PIXIE_SDK_PORT", "8100"))
 STATIC_DIR = Path(__file__).parent / "dist"
-VENDOR_DIR = Path(__file__).parent / "static" / "vendor"
 
 
 # ============================================================================
@@ -53,16 +51,16 @@ async def get_context() -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler — initialise DB and scan components."""
+    """Application lifespan handler — initialise DB and scan labeling pages."""
     conn = await db.get_db()
     await conn.close()
 
-    # Scan and bundle user labeling components.
+    # Discover and register user labeling HTML pages.
     components_dir = get_components_dir()
     resolved = (
         components_dir if components_dir.is_absolute() else Path.cwd() / components_dir
     )
-    print(f"[pixie-sdk] Scanning {resolved} for labeling components...")
+    print(f"[pixie-sdk] Scanning {resolved} for labeling pages...")
     scan_and_register(resolved)
 
     yield
@@ -101,10 +99,6 @@ app.include_router(graphql_app, prefix="/graphql")
 
 # Custom labeling UI component routes.
 app.include_router(components_router)
-
-# Vendored React ESM files for the labeling shell import-map.
-if VENDOR_DIR.exists():
-    app.mount("/vendor", StaticFiles(directory=VENDOR_DIR), name="vendor")
 
 
 # ============================================================================

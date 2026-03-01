@@ -1,21 +1,22 @@
 """Public API for the custom labeling UI component system.
 
-Users place ``.tsx`` files in a ``labeling/`` folder (configurable).
-At ``serve()`` time the framework discovers, bundles, and serves each
-component as a standalone labeling page.
+Users place ``.html`` files in a ``labeling/`` folder (configurable).
+At ``serve()`` time the framework discovers and registers each HTML file.
+When a labeling page is requested, the framework reads the HTML, replaces
+the ``<script pixie-evals-labeling-input>`` placeholder block with the
+actual input data, and serves the result.
 
 Usage::
 
-    import pixie_sdk
-    from pixie_sdk._components import set_components_dir
+    from pixie_sdk.components import set_components_dir
 
     # Optional — default is "./labeling"
     set_components_dir("./ui/labeling")
 
 See Also:
-    ``_scanner.scan_and_register`` — called during server startup.
-    ``_server`` — FastAPI routes for serving bundles and pages.
-    ``_registry`` — in-memory component store.
+    ``scanner.scan_and_register`` — called during server startup.
+    ``server`` — FastAPI routes for serving labeling pages.
+    ``registry`` — in-memory component store.
 """
 
 from __future__ import annotations
@@ -29,6 +30,11 @@ from pathlib import Path
 #: Default components directory, relative to CWD at ``serve()`` time.
 _components_dir: Path = Path("labeling")
 
+#: The attribute name on the ``<script>`` placeholder block.
+#: At serve time the entire ``<script pixie-evals-labeling-input>…</script>``
+#: block is replaced with the actual input data assignment.
+PLACEHOLDER_ATTR = "pixie-evals-labeling-input"
+
 
 # ============================================================================
 # Public Interface
@@ -41,13 +47,13 @@ def set_components_dir(path: str | Path) -> None:
     Call before ``serve()`` if your folder is not named ``labeling``.
 
     Args:
-        path: Path to the folder containing ``.tsx`` labeling components.
+        path: Path to the folder containing ``.html`` labeling components.
               May be relative (resolved against CWD at ``serve()`` time)
               or absolute.
 
     Example::
 
-        set_components_dir("./my_ui_components")
+        set_components_dir("./my_labeling_pages")
     """
     global _components_dir
     _components_dir = Path(path)

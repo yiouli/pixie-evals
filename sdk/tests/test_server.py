@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from pixie_sdk._components._registry import RegisteredComponent, clear, set_component
+from pixie_sdk.components.registry import RegisteredComponent, clear, set_component
 from pixie_sdk.server import app
 
 
@@ -75,60 +75,62 @@ class TestComponentRoutes:
 
     def test_list_components_with_entries(self, client, tmp_path):
         """GET /api/components returns registered slot names."""
-        bundle = tmp_path / "demo.js"
-        bundle.write_text("export default function Demo() {}")
+        html_file = tmp_path / "demo.html"
+        html_file.write_text("<html></html>")
         set_component(
             "demo",
-            RegisteredComponent(
-                slot="demo", src_path=tmp_path / "demo.tsx", bundle_path=bundle
-            ),
+            RegisteredComponent(slot="demo", src_path=html_file),
         )
 
         response = client.get("/api/components")
         assert response.status_code == 200
         assert response.json() == {"slots": ["demo"]}
 
-    def test_serve_component_not_found(self, client):
-        """GET /api/components/missing.js returns 404."""
-        response = client.get("/api/components/missing.js")
-        assert response.status_code == 404
-
-    def test_serve_component_bundle(self, client, tmp_path):
-        """GET /api/components/{slot}.js serves the bundle file."""
-        bundle = tmp_path / "demo.js"
-        bundle.write_text("export default function Demo() {}")
-        set_component(
-            "demo",
-            RegisteredComponent(
-                slot="demo", src_path=tmp_path / "demo.tsx", bundle_path=bundle
-            ),
-        )
-
-        response = client.get("/api/components/demo.js")
-        assert response.status_code == 200
-        assert "javascript" in response.headers["content-type"]
-
     def test_labeling_page_not_found(self, client):
         """GET /labeling/missing?id=x returns 404."""
         response = client.get("/labeling/missing?id=x")
         assert response.status_code == 404
 
-    def test_labeling_page_returns_html(self, client, tmp_path):
-        """GET /labeling/{name}?id=x returns the HTML shell."""
-        bundle = tmp_path / "demo.js"
-        bundle.write_text("export default function Demo() {}")
+    def test_labeling_page_returns_html_with_input(self, client, tmp_path):
+        """GET /labeling/{name}?id=x returns HTML with input data injected."""
+        html_file = tmp_path / "demo.html"
+        html_file.write_text(
+            "<!DOCTYPE html><html><head></head><body>"
+            "<script pixie-evals-labeling-input>\n"
+            "window.INPUT=undefined;\n"
+            "</script>"
+            "<script>console.log(window.INPUT)</script>"
+            "</body></html>"
+        )
         set_component(
             "demo",
-            RegisteredComponent(
-                slot="demo", src_path=tmp_path / "demo.tsx", bundle_path=bundle
-            ),
+            RegisteredComponent(slot="demo", src_path=html_file),
         )
 
-        response = client.get("/labeling/demo?id=test123")
-        assert response.status_code == 200
-        assert "text/html" in response.headers["content-type"]
-        assert "demo" in response.text
-        assert "test123" in response.text
+        entry_id = str(uuid4())
+        entry_data = {"prompt": "hello", "response": "world"}
+        mock_entry = {
+            "id": entry_id,
+            "dataset_id": str(uuid4()),
+            "data": entry_data,
+        }
+
+        with patch("pixie_sdk.components.server.db") as mock_db:
+            mock_conn = AsyncMock()
+            mock_db.get_db = AsyncMock(return_value=mock_conn)
+            mock_db.get_local_entry_id = AsyncMock(return_value=None)
+            mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
+            mock_conn.close = AsyncMock()
+
+            response = client.get(f"/labeling/demo?id={entry_id}")
+            assert response.status_code == 200
+            assert "text/html" in response.headers["content-type"]
+            # Placeholder default should have been replaced
+            assert "window.INPUT=undefined" not in response.text
+            # Input data should be injected via window.INPUT
+            assert "window.INPUT=" in response.text
+            assert '"prompt"' in response.text
+            assert '"hello"' in response.text
 
     def test_input_returns_data_entry(self, client):
         """GET /api/inputs/{id} returns the data entry from the DB."""
@@ -140,7 +142,7 @@ class TestComponentRoutes:
             "data": entry_data,
         }
 
-        with patch("pixie_sdk._components._server.db") as mock_db:
+        with patch("pixie_sdk.components.server.db") as mock_db:
             mock_conn = AsyncMock()
             mock_db.get_db = AsyncMock(return_value=mock_conn)
             mock_db.get_local_entry_id = AsyncMock(return_value=None)
@@ -165,7 +167,7 @@ class TestComponentRoutes:
             "data": entry_data,
         }
 
-        with patch("pixie_sdk._components._server.db") as mock_db:
+        with patch("pixie_sdk.components.server.db") as mock_db:
             mock_conn = AsyncMock()
             mock_db.get_db = AsyncMock(return_value=mock_conn)
             mock_db.get_local_entry_id = AsyncMock(return_value=local_id)
@@ -182,7 +184,7 @@ class TestComponentRoutes:
         """GET /api/inputs/{id} returns 404 for missing entry."""
         entry_id = str(uuid4())
 
-        with patch("pixie_sdk._components._server.db") as mock_db:
+        with patch("pixie_sdk.components.server.db") as mock_db:
             mock_conn = AsyncMock()
             mock_db.get_db = AsyncMock(return_value=mock_conn)
             mock_db.get_local_entry_id = AsyncMock(return_value=None)
@@ -241,7 +243,4 @@ class TestUploadFile:
             },
             files={"file": ("data.json", b'[{"a":1}]', "application/json")},
         )
-        # The mutation should succeed (200) — detailed assertions depend on
-        # the mocking setup; at minimum ensure the endpoint accepted the
-        # multipart request.
         assert response.status_code == 200

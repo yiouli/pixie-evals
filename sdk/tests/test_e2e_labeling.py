@@ -4,9 +4,9 @@ Verifies the full flow: scaffold → scan → serve → load input.
 Uses an in-memory SQLite DB and mocked remote client.
 
 See Also:
-    ``_scaffold`` — generates .tsx scaffold files.
-    ``_scanner`` — scans and bundles .tsx files.
-    ``_server`` — serves the component shell + input data.
+    ``scaffold`` — generates .html + .d.ts scaffold files.
+    ``scanner`` — scans and registers .html files.
+    ``server`` — serves the labeling page with injected input data.
 """
 
 from __future__ import annotations
@@ -20,7 +20,8 @@ import aiosqlite
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from pixie_sdk._components._scaffold import scaffold_component
+from pixie_sdk.components import PLACEHOLDER_ATTR
+from pixie_sdk.components.scaffold import scaffold_component
 
 # ============================================================================
 # Helpers
@@ -83,71 +84,79 @@ class TestE2ELabelingFlow:
     """Test the full developer workflow from scaffold to served component."""
 
     @pytest.mark.asyncio
-    async def test_scaffold_creates_valid_tsx(self, tmp_path: Path):
-        """scaffold_component creates a .tsx file with the right content."""
+    async def test_scaffold_creates_valid_html_and_dts(self, tmp_path: Path):
+        """scaffold_component creates .html and .d.ts files with the right content."""
         mock_client = AsyncMock()
         mock_client.get_test_suite = AsyncMock(return_value=_make_test_suite_response())
         ts_id = uuid4()
 
-        tsx_path = await scaffold_component(
+        html_path, dts_path = await scaffold_component(
             test_suite_id=ts_id,
             components_dir=tmp_path,
             remote_client=mock_client,
         )
 
-        # Should have created a .tsx file
-        assert tsx_path.exists(), f"Expected {tsx_path} to exist"
-        assert tsx_path.suffix == ".tsx"
-        assert tsx_path.parent == tmp_path
+        # HTML file
+        assert html_path.exists()
+        assert html_path.suffix == ".html"
+        assert html_path.parent == tmp_path
 
-        content = tsx_path.read_text()
-        assert "export default function" in content
-        assert "InputProps" in content
-        assert "prompt" in content
-        assert "response" in content
+        html_content = html_path.read_text()
+        assert PLACEHOLDER_ATTR in html_content
+        assert "<!DOCTYPE html>" in html_content
+
+        # d.ts file
+        assert dts_path.exists()
+        assert dts_path.suffix == ".ts"
+        dts_content = dts_path.read_text()
+        assert "interface InputProps" in dts_content
+        assert "declare const INPUT: InputProps;" in dts_content
+        assert "prompt" in dts_content
+        assert "response" in dts_content
 
     @pytest.mark.asyncio
     async def test_scaffold_scan_and_register(self, tmp_path: Path):
-        """Scaffolded file is accepted by scan_and_register."""
-        from pixie_sdk._components._registry import clear
-        from pixie_sdk._components._scanner import scan_and_register
+        """Scaffolded HTML file is accepted by scan_and_register."""
+        from pixie_sdk.components.registry import clear
+        from pixie_sdk.components.scanner import scan_and_register
 
         mock_client = AsyncMock()
         mock_client.get_test_suite = AsyncMock(return_value=_make_test_suite_response())
 
+        ts_id = uuid4()
         await scaffold_component(
-            test_suite_id=uuid4(),
+            test_suite_id=ts_id,
             components_dir=tmp_path,
             remote_client=mock_client,
         )
 
         clear()
         registered = scan_and_register(tmp_path)
-        # scan_and_register returns a list of slot names.
-        # If esbuild binary isn't available, it may return empty.
         assert isinstance(registered, list)
+        assert len(registered) == 1
+        # Slot is the normalized name, not UUID
+        assert registered[0] == "trace_comparison"
 
     @pytest.mark.asyncio
-    async def test_scaffold_file_named_by_uuid(self, tmp_path: Path):
-        """Scaffold file is named after the test suite UUID, not the name."""
+    async def test_scaffold_file_named_by_suite_name(self, tmp_path: Path):
+        """Scaffold files are named after the normalized test suite name."""
         mock_client = AsyncMock()
         mock_client.get_test_suite = AsyncMock(
             return_value=_make_test_suite_response(name="My Cool Suite")
         )
 
         ts_id = uuid4()
-        tsx_path = await scaffold_component(
+        html_path, dts_path = await scaffold_component(
             test_suite_id=ts_id,
             components_dir=tmp_path,
             remote_client=mock_client,
         )
 
-        assert tsx_path.name == f"{ts_id}.tsx"
-        content = tsx_path.read_text()
-        # PascalCase function name comes from the suite name
-        assert "MyCoolSuite" in content
-        # Route uses the UUID
-        assert str(ts_id) in content
+        assert html_path.name == "my_cool_suite.html"
+        assert dts_path.name == "my_cool_suite.d.ts"
+        # Suite name appears in the HTML
+        html_content = html_path.read_text()
+        assert "My Cool Suite" in html_content
 
     @pytest.mark.asyncio
     async def test_scaffold_input_types_from_schema(self, tmp_path: Path):
@@ -165,17 +174,17 @@ class TestE2ELabelingFlow:
             return_value=_make_test_suite_response(input_schema=schema)
         )
 
-        tsx_path = await scaffold_component(
+        _html_path, dts_path = await scaffold_component(
             test_suite_id=uuid4(),
             components_dir=tmp_path,
             remote_client=mock_client,
         )
 
-        content = tsx_path.read_text()
+        dts_content = dts_path.read_text()
         # Fields are optional (no `required` in schema) so they get `?`
-        assert "conversation?: string[]" in content
-        assert "score?: number" in content
-        assert "metadata?: Record<string, unknown>" in content
+        assert "conversation?: string[]" in dts_content
+        assert "score?: number" in dts_content
+        assert "metadata?: Record<string, unknown>" in dts_content
 
 
 # ============================================================================
@@ -209,7 +218,6 @@ class TestE2EInputEndpoint:
             )
             await conn.commit()
 
-        # Capture the original get_db before patching
         from pixie_sdk import db
 
         original_get_db = db.get_db
@@ -217,10 +225,10 @@ class TestE2EInputEndpoint:
         async def mock_get_db(*_args, **_kwargs):  # type: ignore[no-untyped-def]
             return await original_get_db(str(db_path))
 
-        with patch("pixie_sdk._components._server.db.get_db", mock_get_db):
+        with patch("pixie_sdk.components.server.db.get_db", mock_get_db):
             from fastapi import FastAPI
 
-            from pixie_sdk._components._server import router
+            from pixie_sdk.components.server import router
 
             test_app = FastAPI()
             test_app.include_router(router)
@@ -250,10 +258,10 @@ class TestE2EInputEndpoint:
         async def mock_get_db(*_args, **_kwargs):  # type: ignore[no-untyped-def]
             return await original_get_db(str(db_path))
 
-        with patch("pixie_sdk._components._server.db.get_db", mock_get_db):
+        with patch("pixie_sdk.components.server.db.get_db", mock_get_db):
             from fastapi import FastAPI
 
-            from pixie_sdk._components._server import router
+            from pixie_sdk.components.server import router
 
             test_app = FastAPI()
             test_app.include_router(router)
@@ -277,58 +285,88 @@ class TestE2ELabelingPage:
     """Test the /labeling/{component_name}?id=... page route."""
 
     @pytest.mark.asyncio
-    async def test_registered_component_returns_html(self):
-        """A registered component returns a self-contained HTML shell."""
-        from pixie_sdk._components._registry import (
+    async def test_registered_component_returns_html_with_input(self):
+        """A registered component returns HTML with input data injected."""
+        from pixie_sdk.components.registry import (
             RegisteredComponent,
             clear,
             set_component,
         )
 
+        import tempfile
+
         clear()
+
+        # Create a temp HTML file with the placeholder
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+            f.write(
+                "<!DOCTYPE html><html><head></head><body>"
+                "<script pixie-evals-labeling-input>\n"
+                "window.INPUT=undefined;\n"
+                "</script>"
+                "<script>console.log(window.INPUT)</script>"
+                "</body></html>"
+            )
+            tmp_html = Path(f.name)
+
         set_component(
             "my_comp",
             RegisteredComponent(
                 slot="my_comp",
-                src_path=Path("/fake/my_comp.tsx"),
-                bundle_path=Path("/fake/my_comp.js"),
+                src_path=tmp_html,
             ),
         )
 
-        from fastapi import FastAPI
+        entry_id = str(uuid4())
+        entry_data = {"foo": "bar"}
+        mock_entry = {
+            "id": entry_id,
+            "dataset_id": str(uuid4()),
+            "data": entry_data,
+        }
 
-        from pixie_sdk._components._server import router
+        with patch("pixie_sdk.components.server.db") as mock_db:
+            mock_conn = AsyncMock()
+            mock_db.get_db = AsyncMock(return_value=mock_conn)
+            mock_db.get_local_entry_id = AsyncMock(return_value=None)
+            mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
+            mock_conn.close = AsyncMock()
 
-        test_app = FastAPI()
-        test_app.include_router(router)
+            from fastapi import FastAPI
 
-        transport = ASGITransport(app=test_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            entry_id = str(uuid4())
-            resp = await client.get(f"/labeling/my_comp?id={entry_id}")
+            from pixie_sdk.components.server import router
 
-        assert resp.status_code == 200
-        html = resp.text
-        assert "my_comp" in html
-        assert entry_id in html
-        assert "<html" in html
-        # The shell uses JS template literals like `/api/components/${COMPONENT_NAME}.js`
-        # so the literal strings aren't in the HTML — verify the JS constants instead.
-        assert "/api/components/" in html
-        assert "/api/inputs/" in html
+            test_app = FastAPI()
+            test_app.include_router(router)
+
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.get(f"/labeling/my_comp?id={entry_id}")
+
+            assert resp.status_code == 200
+            html = resp.text
+            assert "<html" in html
+            # Placeholder default should be replaced with actual data
+            assert "window.INPUT=undefined" not in html
+            assert "window.INPUT=" in html
+            assert '"foo"' in html
+            assert '"bar"' in html
 
         clear()
+        tmp_html.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
     async def test_unregistered_component_returns_404(self):
         """Requesting an unregistered component returns 404."""
-        from pixie_sdk._components._registry import clear
+        from pixie_sdk.components.registry import clear
 
         clear()
 
         from fastapi import FastAPI
 
-        from pixie_sdk._components._server import router
+        from pixie_sdk.components.server import router
 
         test_app = FastAPI()
         test_app.include_router(router)

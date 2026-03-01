@@ -1,4 +1,4 @@
-"""Tests for pixie_sdk._components._scaffold — TSX scaffold generation."""
+"""Tests for pixie_sdk.components.scaffold — HTML + d.ts scaffold generation."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from uuid import UUID
 
 import pytest
 
-from pixie_sdk._components._scaffold import (
+from pixie_sdk.components import PLACEHOLDER_ATTR
+from pixie_sdk.components.scaffold import (
     _build_fields,
     _json_schema_to_ts_type,
-    _to_pascal_case,
     _to_snake_case,
     scaffold_component,
 )
@@ -37,24 +37,6 @@ class TestToSnakeCase:
 
     def test_mixed(self):
         assert _to_snake_case("My TestSuite v2") == "my_test_suite_v2"
-
-
-# ============================================================================
-# _to_pascal_case
-# ============================================================================
-
-
-class TestToPascalCase:
-    """Test _to_pascal_case helper."""
-
-    def test_simple(self):
-        assert _to_pascal_case("trace_comparison") == "TraceComparison"
-
-    def test_single_word(self):
-        assert _to_pascal_case("demo") == "Demo"
-
-    def test_multiple_words(self):
-        assert _to_pascal_case("llm_output_review") == "LlmOutputReview"
 
 
 # ============================================================================
@@ -112,7 +94,7 @@ class TestBuildFields:
         }
         result = _build_fields(schema)
         assert "input: string;" in result
-        assert "score?: number;" in result  # optional because not required
+        assert "score?: number;" in result
 
     def test_empty_properties(self):
         schema = {"type": "object", "properties": {}}
@@ -148,8 +130,8 @@ class TestScaffoldComponent:
     """Test scaffold_component with a mocked RemoteClient."""
 
     @pytest.mark.asyncio
-    async def test_creates_tsx_file(self, tmp_path):
-        """Should create a .tsx file named after the test suite UUID."""
+    async def test_creates_html_and_dts_files(self, tmp_path):
+        """Should create an .html and .d.ts file."""
         mock_client = AsyncMock()
         mock_client.get_test_suite.return_value = {
             "id": "adf79684-0327-4261-9f6f-70719c0c947b",
@@ -169,28 +151,33 @@ class TestScaffoldComponent:
         }
 
         test_id = UUID("adf79684-0327-4261-9f6f-70719c0c947b")
-        result = await scaffold_component(
+        html_path, dts_path = await scaffold_component(
             test_suite_id=test_id,
             components_dir=tmp_path / "labeling",
             remote_client=mock_client,
         )
 
-        assert result.exists()
-        # File is named after the test suite UUID
-        assert result.name == "adf79684-0327-4261-9f6f-70719c0c947b.tsx"
-        assert result.parent == tmp_path / "labeling"
+        # HTML file — named by normalized suite name
+        assert html_path.exists()
+        assert html_path.name == "trace_comparison.html"
+        assert html_path.parent == tmp_path / "labeling"
 
-        content = result.read_text()
-        assert "export interface InputProps" in content
-        assert "input: string;" in content
-        assert "output: string;" in content
-        assert "expected?: string;" in content  # not required
-        # Function name is PascalCase from suite name
-        assert "export default function TraceComparison" in content
-        # Route uses the UUID
-        assert "/labeling/adf79684-0327-4261-9f6f-70719c0c947b" in content
-        # Suite name appears in comment and h2
-        assert "Trace Comparison" in content
+        html_content = html_path.read_text()
+        assert PLACEHOLDER_ATTR in html_content
+        assert "Trace Comparison" in html_content
+        assert "trace_comparison.d.ts" in html_content
+
+        # d.ts file
+        assert dts_path.exists()
+        assert dts_path.name == "trace_comparison.d.ts"
+        assert dts_path.parent == tmp_path / "labeling"
+
+        dts_content = dts_path.read_text()
+        assert "interface InputProps" in dts_content
+        assert "input: string;" in dts_content
+        assert "output: string;" in dts_content
+        assert "expected?: string;" in dts_content  # not required
+        assert "declare const INPUT: InputProps;" in dts_content
 
     @pytest.mark.asyncio
     async def test_raises_if_not_found(self, tmp_path):
@@ -227,15 +214,15 @@ class TestScaffoldComponent:
             ),
         }
 
-        result = await scaffold_component(
+        html_path, dts_path = await scaffold_component(
             test_suite_id=test_id,
             components_dir=tmp_path / "labeling",
             remote_client=mock_client,
         )
 
-        assert result.name == f"{test_id}.tsx"
-        content = result.read_text()
-        assert "text" in content
+        assert html_path.name == "string_config_suite.html"
+        dts_content = dts_path.read_text()
+        assert "text" in dts_content
 
     @pytest.mark.asyncio
     async def test_empty_schema(self, tmp_path):
@@ -248,14 +235,14 @@ class TestScaffoldComponent:
             "config": {},
         }
 
-        result = await scaffold_component(
+        _html_path, dts_path = await scaffold_component(
             test_suite_id=test_id,
             components_dir=tmp_path / "labeling",
             remote_client=mock_client,
         )
 
-        content = result.read_text()
-        assert "[key: string]: unknown;" in content
+        dts_content = dts_path.read_text()
+        assert "[key: string]: unknown;" in dts_content
 
     @pytest.mark.asyncio
     async def test_creates_directory(self, tmp_path):
@@ -271,14 +258,14 @@ class TestScaffoldComponent:
             "config": {},
         }
 
-        result = await scaffold_component(
+        html_path, _dts_path = await scaffold_component(
             test_suite_id=test_id,
             components_dir=deep_dir,
             remote_client=mock_client,
         )
 
         assert deep_dir.exists()
-        assert result.exists()
+        assert html_path.exists()
 
     @pytest.mark.asyncio
     async def test_input_schema_snake_case_key(self, tmp_path):
@@ -307,15 +294,57 @@ class TestScaffoldComponent:
         }
 
         test_id = UUID("adf79684-0327-4261-9f6f-70719c0c947b")
-        result = await scaffold_component(
+        _html_path, dts_path = await scaffold_component(
             test_suite_id=test_id,
             components_dir=tmp_path / "labeling",
             remote_client=mock_client,
         )
 
-        content = result.read_text()
-        assert "summary: string;" in content
-        assert "transcript: Record<string, unknown>[];" in content
-        assert "function_called: Record<string, unknown>[];" in content
-        # Should NOT have the fallback
-        assert "[key: string]: unknown;" not in content
+        dts_content = dts_path.read_text()
+        assert "summary: string;" in dts_content
+        assert "transcript: Record<string, unknown>[];" in dts_content
+        assert "function_called: Record<string, unknown>[];" in dts_content
+        assert "[key: string]: unknown;" not in dts_content
+
+    @pytest.mark.asyncio
+    async def test_dts_named_after_suite(self, tmp_path):
+        """The .d.ts file is named after the normalized suite name, not UUID."""
+        mock_client = AsyncMock()
+        mock_client.get_test_suite.return_value = {
+            "id": "adf79684-0327-4261-9f6f-70719c0c947b",
+            "name": "My Cool Suite",
+            "config": {},
+        }
+
+        test_id = UUID("adf79684-0327-4261-9f6f-70719c0c947b")
+        html_path, dts_path = await scaffold_component(
+            test_suite_id=test_id,
+            components_dir=tmp_path / "labeling",
+            remote_client=mock_client,
+        )
+
+        # Both files are named by normalized suite name
+        assert html_path.name == "my_cool_suite.html"
+        assert dts_path.name == "my_cool_suite.d.ts"
+
+    @pytest.mark.asyncio
+    async def test_html_is_valid_document(self, tmp_path):
+        """The generated HTML is a complete HTML document."""
+        mock_client = AsyncMock()
+        mock_client.get_test_suite.return_value = {
+            "id": "adf79684-0327-4261-9f6f-70719c0c947b",
+            "name": "Test",
+            "config": {},
+        }
+
+        test_id = UUID("adf79684-0327-4261-9f6f-70719c0c947b")
+        html_path, _dts_path = await scaffold_component(
+            test_suite_id=test_id,
+            components_dir=tmp_path / "labeling",
+            remote_client=mock_client,
+        )
+
+        html = html_path.read_text()
+        assert html.startswith("<!DOCTYPE html>")
+        assert "</html>" in html
+        assert "<title>" in html
