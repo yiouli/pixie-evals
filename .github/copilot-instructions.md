@@ -1,5 +1,16 @@
 # Copilot Instructions for pixie-evals
 
+## CRITICAL: Never Fabricate Data
+
+**NEVER make up, guess, or fabricate data, schemas, API responses, or code that depends on external state you haven't actually verified.** If you cannot access a remote server, database, or API due to missing credentials, network errors, or any other reason:
+
+1. **Stop and ask the user** for the missing credential or access.
+2. **Do NOT** invent placeholder schemas, fake API responses, or synthetic data and present it as real.
+3. **Do NOT** proceed with downstream work (scaffolding, code generation, UI components) based on fabricated inputs.
+4. **Do NOT** claim to have verified something you haven't actually run and inspected the output of.
+
+This applies to all external data sources: remote GraphQL servers, databases, file contents, API schemas, and any other state that must be observed rather than assumed.
+
 ## Project Overview
 
 pixie-evals is an evaluation platform with a Python SDK backend and a React/TypeScript frontend. The frontend uses Vite, MUI, Apollo Client, Zustand, and GraphQL Codegen.

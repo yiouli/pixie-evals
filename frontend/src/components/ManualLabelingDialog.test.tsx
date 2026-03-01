@@ -54,12 +54,33 @@ describe("ManualLabelingDialog", () => {
           open={true}
           onClose={vi.fn()}
           entryId="entry-123"
+          testSuiteId="adf79684-0327-4261-9f6f-70719c0c947b"
         />
       </TestWrapper>,
     );
     const iframe = screen.getByTitle("Labeling UI");
     expect(iframe).toBeInTheDocument();
-    expect(iframe.getAttribute("src")).toContain("entry-123");
+    const src = iframe.getAttribute("src") ?? "";
+    expect(src).toContain("/labeling/adf79684-0327-4261-9f6f-70719c0c947b");
+    expect(src).toContain("id=entry-123");
+  });
+
+  it("should include test suite ID in iframe src", () => {
+    const tsId = "12345678-1234-1234-1234-123456789abc";
+    render(
+      <TestWrapper>
+        <ManualLabelingDialog
+          open={true}
+          onClose={vi.fn()}
+          entryId="entry-456"
+          testSuiteId={tsId}
+        />
+      </TestWrapper>,
+    );
+    const iframe = screen.getByTitle("Labeling UI");
+    const src = iframe.getAttribute("src") ?? "";
+    expect(src).toContain(`/labeling/${tsId}`);
+    expect(src).toContain("id=entry-456");
   });
 
   it("should render metric sliders", () => {

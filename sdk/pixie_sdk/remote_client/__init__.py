@@ -89,6 +89,40 @@ class RemoteClient:
 
         return body.get("data", {})
 
+    async def get_test_suite(
+        self,
+        test_suite_id: UUID,
+    ) -> dict[str, Any] | None:
+        """Fetch a single test suite by ID from the remote server.
+
+        Queries ``listTestSuites`` and filters client-side because the remote
+        server does not expose a single-item lookup.
+
+        Args:
+            test_suite_id: UUID of the test suite.
+
+        Returns:
+            Dict with ``id``, ``name``, ``description``, ``config`` (including
+            ``input_schema``), or ``None`` if not found.
+        """
+        query = """
+        query ListTestSuites {
+            listTestSuites {
+                id
+                name
+                description
+                config
+            }
+        }
+        """
+        data = await self._execute(query)
+        suites: list[dict[str, Any]] = data.get("listTestSuites", [])
+        target = str(test_suite_id)
+        for suite in suites:
+            if suite.get("id") == target:
+                return dict(suite)
+        return None
+
     async def create_test_suite(
         self,
         name: str,
@@ -127,7 +161,7 @@ class RemoteClient:
         self,
         test_suite_id: UUID,
         test_cases: list[dict[str, Any]],
-    ) -> bool:
+    ) -> list[str]:
         """Add test cases to a test suite.
 
         Args:
@@ -135,7 +169,7 @@ class RemoteClient:
             test_cases: List of test case dicts with input, embedding, etc.
 
         Returns:
-            True if successful.
+            List of remote test case UUID strings created by the server.
         """
         query = """
         mutation AddTestCases($testSuiteId: UUID!, $testCases: [TestCaseWithLabelInput!]!) {
@@ -149,14 +183,14 @@ class RemoteClient:
             }
             for tc in test_cases
         ]
-        await self._execute(
+        data = await self._execute(
             query,
             variables={
                 "testSuiteId": str(test_suite_id),
                 "testCases": tc_inputs,
             },
         )
-        return True
+        return data.get("addTestCases", [])
 
     async def get_evaluator_with_signature(
         self,

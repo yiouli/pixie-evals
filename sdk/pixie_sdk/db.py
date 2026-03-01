@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS data_entries (
     data TEXT NOT NULL,  -- JSON object for one row
     FOREIGN KEY (dataset_id) REFERENCES datasets(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS test_case_map (
+    remote_test_case_id TEXT PRIMARY KEY,
+    local_data_entry_id TEXT NOT NULL,
+    FOREIGN KEY (local_data_entry_id) REFERENCES data_entries(id) ON DELETE CASCADE
+);
 """
 
 
@@ -280,3 +286,48 @@ async def count_data_entries(
     )
     row = await cursor.fetchone()
     return row["count"] if row else 0
+
+
+# ============================================================================
+# Test Case Map Operations
+# ============================================================================
+
+
+async def save_test_case_map(
+    db: aiosqlite.Connection,
+    mappings: list[tuple[str, str]],
+) -> None:
+    """Save remote test case ID → local data entry ID mappings.
+
+    Args:
+        db: Database connection.
+        mappings: List of ``(remote_test_case_id, local_data_entry_id)`` pairs.
+    """
+    await db.executemany(
+        "INSERT OR REPLACE INTO test_case_map "
+        "(remote_test_case_id, local_data_entry_id) VALUES (?, ?)",
+        mappings,
+    )
+    await db.commit()
+
+
+async def get_local_entry_id(
+    db: aiosqlite.Connection,
+    remote_test_case_id: str,
+) -> str | None:
+    """Look up the local data entry ID for a remote test case.
+
+    Args:
+        db: Database connection.
+        remote_test_case_id: UUID string of the remote test case.
+
+    Returns:
+        Local data entry ID string or None if no mapping exists.
+    """
+    cursor = await db.execute(
+        "SELECT local_data_entry_id FROM test_case_map "
+        "WHERE remote_test_case_id = ?",
+        (remote_test_case_id,),
+    )
+    row = await cursor.fetchone()
+    return row["local_data_entry_id"] if row else None

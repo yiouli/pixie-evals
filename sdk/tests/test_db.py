@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -54,6 +55,7 @@ class TestGetDb:
         await connection.close()
         assert "datasets" in tables
         assert "data_entries" in tables
+        assert "test_case_map" in tables
 
 
 # ============================================================================
@@ -329,3 +331,79 @@ class TestLinkDatasetToTestSuite:
         dataset = await db.get_dataset(conn, dataset_id)
         assert dataset is not None
         assert dataset["test_suite_id"] == ts_id_2
+
+
+# ============================================================================
+# TestTestCaseMap
+# ============================================================================
+
+
+class TestSaveTestCaseMap:
+    """Test save_test_case_map — persists remote→local ID mappings."""
+
+    @pytest.mark.asyncio
+    async def test_inserts_mappings(self, conn, sample_schema, sample_rows):
+        """save_test_case_map should store remote→local pairs."""
+        dataset_id = await db.create_dataset(
+            conn, file_name="test.json", row_schema=sample_schema
+        )
+        entry_ids = await db.create_data_entries(
+            conn, dataset_id=dataset_id, rows=sample_rows
+        )
+
+        remote_id = str(uuid4())
+        mappings = [(remote_id, str(entry_ids[0]))]
+        await db.save_test_case_map(conn, mappings)
+
+        local_id = await db.get_local_entry_id(conn, remote_id)
+        assert local_id == str(entry_ids[0])
+
+    @pytest.mark.asyncio
+    async def test_upsert_overwrites(self, conn, sample_schema, sample_rows):
+        """save_test_case_map should overwrite existing mapping."""
+        dataset_id = await db.create_dataset(
+            conn, file_name="test.json", row_schema=sample_schema
+        )
+        entry_ids = await db.create_data_entries(
+            conn, dataset_id=dataset_id, rows=sample_rows
+        )
+
+        remote_id = str(uuid4())
+        await db.save_test_case_map(conn, [(remote_id, str(entry_ids[0]))])
+
+        # Re-map to a different local entry
+        if len(entry_ids) > 1:
+            await db.save_test_case_map(conn, [(remote_id, str(entry_ids[1]))])
+            local_id = await db.get_local_entry_id(conn, remote_id)
+            assert local_id == str(entry_ids[1])
+
+    @pytest.mark.asyncio
+    async def test_empty_list_is_noop(self, conn):
+        """save_test_case_map with empty list should not error."""
+        await db.save_test_case_map(conn, [])
+
+
+class TestGetLocalEntryId:
+    """Test get_local_entry_id — looks up the mapping."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_missing(self, conn):
+        """get_local_entry_id should return None for unmapped IDs."""
+        result = await db.get_local_entry_id(conn, str(uuid4()))
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_mapped_id(self, conn, sample_schema, sample_rows):
+        """get_local_entry_id should return the local entry ID."""
+        dataset_id = await db.create_dataset(
+            conn, file_name="test.json", row_schema=sample_schema
+        )
+        entry_ids = await db.create_data_entries(
+            conn, dataset_id=dataset_id, rows=sample_rows
+        )
+
+        remote_id = str(uuid4())
+        await db.save_test_case_map(conn, [(remote_id, str(entry_ids[0]))])
+
+        local_id = await db.get_local_entry_id(conn, remote_id)
+        assert local_id == str(entry_ids[0])

@@ -646,6 +646,42 @@ class Mutation:
             conn, dataset_id=dataset_id, test_suite_id=str(test_suite_id)
         )
 
+    @strawberry.mutation
+    async def scaffold_labeling_component(
+        self,
+        info: Info,
+        test_suite_id: UUID,
+    ) -> str:
+        """Generate a scaffold TSX labeling component for a test suite.
+
+        Fetches the test suite name and input schema from the remote
+        server and creates a ``.tsx`` file in the components directory.
+
+        Args:
+            test_suite_id: UUID of the remote test suite.
+
+        Returns:
+            The relative path of the created ``.tsx`` file.
+        """
+        from pixie_sdk._components import get_components_dir
+        from pixie_sdk._components._scaffold import scaffold_component
+        from pixie_sdk.remote_client import RemoteClient
+
+        client = RemoteClient()
+        components_dir = get_components_dir()
+        resolved = (
+            components_dir
+            if components_dir.is_absolute()
+            else Path.cwd() / components_dir
+        )
+
+        result = await scaffold_component(
+            test_suite_id=test_suite_id,
+            components_dir=resolved,
+            remote_client=client,
+        )
+        return str(result)
+
 
 # ============================================================================
 # Subscriptions
@@ -746,10 +782,16 @@ class Subscription:
                 )
 
             # Step 3: Upload test cases to remote server in batches
+            # and save the remote → local ID mapping.
+            conn = await db.get_db()
             total_cases = len(embedded_cases)
             for i in range(0, total_cases, UPLOAD_BATCH_SIZE):
                 batch = embedded_cases[i : i + UPLOAD_BATCH_SIZE]
-                await client.add_test_cases(test_suite_id, batch)
+                remote_ids = await client.add_test_cases(test_suite_id, batch)
+
+                # Map each remote test case ID to its local data entry ID.
+                mappings = [(rid, tc["entry_id"]) for rid, tc in zip(remote_ids, batch)]
+                await db.save_test_case_map(conn, mappings)
 
                 progress = 0.6 + 0.4 * (i + len(batch)) / total_cases
                 batch_num = (i // UPLOAD_BATCH_SIZE) + 1
@@ -861,10 +903,16 @@ class Subscription:
                 )
 
             # Upload test cases to remote server in batches
+            # and save the remote → local ID mapping.
+            conn = await db.get_db()
             total_cases = len(embedded_cases)
             for i in range(0, total_cases, UPLOAD_BATCH_SIZE):
                 batch = embedded_cases[i : i + UPLOAD_BATCH_SIZE]
-                await client.add_test_cases(test_suite_id, batch)
+                remote_ids = await client.add_test_cases(test_suite_id, batch)
+
+                # Map each remote test case ID to its local data entry ID.
+                mappings = [(rid, tc["entry_id"]) for rid, tc in zip(remote_ids, batch)]
+                await db.save_test_case_map(conn, mappings)
 
                 progress = 0.5 + 0.5 * (i + len(batch)) / total_cases
                 batch_num = (i // UPLOAD_BATCH_SIZE) + 1

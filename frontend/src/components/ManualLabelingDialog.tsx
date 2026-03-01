@@ -21,6 +21,8 @@ interface ManualLabelingDialogProps {
   onClose: () => void;
   /** UUID of the data entry to render in the SDK labeling iframe. */
   entryId?: string;
+  /** UUID of the test suite — used as the labeling component route. */
+  testSuiteId?: string;
   /** Metrics configured for the test suite. */
   metrics?: Array<{ id: string; name: string }>;
   /** Called when user saves ratings. */
@@ -40,6 +42,7 @@ export function ManualLabelingDialog({
   open,
   onClose,
   entryId,
+  testSuiteId,
   metrics = [],
   onSave,
   onSkip,
@@ -74,7 +77,7 @@ export function ManualLabelingDialog({
         {entryId ? (
           <Box sx={{ mb: 3 }}>
             <iframe
-              src={`${SDK_BASE_URL}/labeling-ui/${entryId}`}
+              src={`${SDK_BASE_URL}/labeling/${testSuiteId}?id=${entryId}`}
               title="Labeling UI"
               style={{
                 width: "100%",

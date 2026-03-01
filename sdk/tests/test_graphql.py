@@ -271,11 +271,15 @@ class TestCreateTestSuiteProgress:
         with patch("pixie_sdk.remote_client.RemoteClient") as mock_rc_class:
             mock_client = AsyncMock()
             mock_client.create_test_suite = AsyncMock(return_value=uuid4())
-            mock_client.add_test_cases = AsyncMock(return_value=True)
+            remote_ids = [str(uuid4())]
+            mock_client.add_test_cases = AsyncMock(return_value=remote_ids)
             mock_rc_class.return_value = mock_client
 
             mock_db.get_data_entries = AsyncMock(return_value=[_make_entry_dict()])
             mock_embed.embed_batch = AsyncMock(return_value=[[0.1, 0.2]])
+            # The upload loop calls db.get_db() and db.save_test_case_map().
+            mock_db.get_db = AsyncMock(return_value=AsyncMock())
+            mock_db.save_test_case_map = AsyncMock()
 
             sub = Subscription()
             inp = TestSuiteCreateInput(
@@ -326,13 +330,18 @@ class TestCreateTestSuiteProgress:
             ts_id = uuid4()
             mock_client = AsyncMock()
             mock_client.create_test_suite = AsyncMock(return_value=ts_id)
-            mock_client.add_test_cases = AsyncMock(return_value=True)
+            # add_test_cases now returns a list of remote UUID strings.
+            remote_ids = [str(uuid4()), str(uuid4())]
+            mock_client.add_test_cases = AsyncMock(return_value=remote_ids)
             mock_rc_class.return_value = mock_client
 
-            mock_db.get_data_entries = AsyncMock(
-                return_value=[_make_entry_dict(), _make_entry_dict()]
-            )
+            entries = [_make_entry_dict(), _make_entry_dict()]
+            mock_db.get_data_entries = AsyncMock(return_value=entries)
             mock_embed.embed_batch = AsyncMock(return_value=[[0.1, 0.2], [0.3, 0.4]])
+            # The upload loop calls db.get_db() and db.save_test_case_map().
+            mock_mapping_conn = AsyncMock()
+            mock_db.get_db = AsyncMock(return_value=mock_mapping_conn)
+            mock_db.save_test_case_map = AsyncMock()
 
             sub = Subscription()
             inp = TestSuiteCreateInput(
@@ -351,3 +360,53 @@ class TestCreateTestSuiteProgress:
             assert last.status == CreationStatus.COMPLETE
             assert last.progress == 1.0
             assert last.test_suite_id == ts_id
+
+
+# ============================================================================
+# TestMutationScaffoldLabelingComponent
+# ============================================================================
+
+
+class TestMutationScaffoldLabelingComponent:
+    """Test the scaffold_labeling_component mutation."""
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk._components.get_components_dir")
+    @patch("pixie_sdk._components._scaffold.scaffold_component", new_callable=AsyncMock)
+    @patch("pixie_sdk.remote_client.RemoteClient")
+    async def test_returns_path(
+        self, mock_rc_cls, mock_scaffold, mock_get_dir, tmp_path
+    ):
+        """scaffold_labeling_component returns the scaffold file path."""
+        from pathlib import Path
+
+        mock_get_dir.return_value = tmp_path / "labeling"
+        ts_id = uuid4()
+        mock_scaffold.return_value = Path(f"labeling/{ts_id}.tsx")
+
+        mutation = Mutation()
+        result = await mutation.scaffold_labeling_component(
+            info=_mock_info(), test_suite_id=ts_id
+        )
+        assert result == f"labeling/{ts_id}.tsx"
+        mock_scaffold.assert_called_once()
+        # Verify test_suite_id was passed
+        call_kwargs = mock_scaffold.call_args
+        assert call_kwargs.kwargs["test_suite_id"] == ts_id
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk._components.get_components_dir")
+    @patch("pixie_sdk._components._scaffold.scaffold_component", new_callable=AsyncMock)
+    @patch("pixie_sdk.remote_client.RemoteClient")
+    async def test_raises_on_not_found(
+        self, mock_rc_cls, mock_scaffold, mock_get_dir, tmp_path
+    ):
+        """scaffold_labeling_component propagates error when test suite not found."""
+        mock_get_dir.return_value = tmp_path / "labeling"
+        mock_scaffold.side_effect = ValueError("Test suite not found")
+
+        mutation = Mutation()
+        with pytest.raises(ValueError, match="not found"):
+            await mutation.scaffold_labeling_component(
+                info=_mock_info(), test_suite_id=uuid4()
+            )

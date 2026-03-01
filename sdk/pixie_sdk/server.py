@@ -1,26 +1,29 @@
 """FastAPI server for the Pixie SDK.
 
 Serves the local Strawberry GraphQL API for dataset management,
-Jinja2-rendered labeling UIs, and proxies to the remote pixie-server.
-The server runs on the user's local machine — raw data never leaves.
+custom TSX labeling components (bundled with esbuild), and proxies
+to the remote pixie-server.  The server runs on the user's local
+machine — raw data never leaves.
+
+See Also:
+    ``_components`` — the custom labeling UI component system.
 """
 
 from __future__ import annotations
 
-import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from jinja2 import Environment, FileSystemLoader
 from strawberry.fastapi import GraphQLRouter
 
 from pixie_sdk import db
+from pixie_sdk._components import get_components_dir
+from pixie_sdk._components._scanner import scan_and_register
+from pixie_sdk._components._server import router as components_router
 from pixie_sdk.graphql import schema
 
 # ============================================================================
@@ -28,13 +31,8 @@ from pixie_sdk.graphql import schema
 # ============================================================================
 
 SDK_PORT = int(os.environ.get("PIXIE_SDK_PORT", "8100"))
-TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "dist"
-
-_jinja_env = Environment(
-    loader=FileSystemLoader(TEMPLATES_DIR),
-    autoescape=True,
-)
+VENDOR_DIR = Path(__file__).parent / "static" / "vendor"
 
 
 # ============================================================================
@@ -55,9 +53,18 @@ async def get_context() -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler — initialise DB on startup."""
+    """Application lifespan handler — initialise DB and scan components."""
     conn = await db.get_db()
     await conn.close()
+
+    # Scan and bundle user labeling components.
+    components_dir = get_components_dir()
+    resolved = (
+        components_dir if components_dir.is_absolute() else Path.cwd() / components_dir
+    )
+    print(f"[pixie-sdk] Scanning {resolved} for labeling components...")
+    scan_and_register(resolved)
+
     yield
 
 
@@ -92,6 +99,13 @@ graphql_app = GraphQLRouter(
 )
 app.include_router(graphql_app, prefix="/graphql")
 
+# Custom labeling UI component routes.
+app.include_router(components_router)
+
+# Vendored React ESM files for the labeling shell import-map.
+if VENDOR_DIR.exists():
+    app.mount("/vendor", StaticFiles(directory=VENDOR_DIR), name="vendor")
+
 
 # ============================================================================
 # REST Endpoints
@@ -102,39 +116,6 @@ app.include_router(graphql_app, prefix="/graphql")
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
-
-
-@app.get("/labeling-ui/{entry_id}", response_class=HTMLResponse)
-async def labeling_ui(entry_id: str, template: str | None = None) -> str:
-    """Render the labeling UI for a data entry as HTML.
-
-    Used by the frontend to display in an iframe.
-
-    Args:
-        entry_id: UUID of the data entry.
-        template: Optional template name override.
-
-    Returns:
-        Rendered HTML string.
-
-    Raises:
-        HTTPException: 404 if entry not found.
-    """
-    conn = await db.get_db()
-    entry = await db.get_data_entry(conn, UUID(entry_id))
-    await conn.close()
-
-    if not entry:
-        raise HTTPException(status_code=404, detail="Entry not found")
-
-    tpl_name = template or "default.html"
-
-    try:
-        tmpl = _jinja_env.get_template(tpl_name)
-        return tmpl.render(entry_id=entry_id, data=entry["data"])
-    except Exception:
-        data_json = json.dumps(entry["data"], indent=2)
-        return f"<html><body><pre>{data_json}</pre></body></html>"
 
 
 # ============================================================================

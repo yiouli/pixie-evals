@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from pixie_sdk._components._registry import RegisteredComponent, clear, set_component
 from pixie_sdk.server import app
 
 
@@ -16,6 +17,14 @@ from pixie_sdk.server import app
 def client():
     """Create a test client for the FastAPI app."""
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _clean_registry():
+    """Clear the component registry before each test."""
+    clear()
+    yield
+    clear()
 
 
 # ============================================================================
@@ -51,43 +60,137 @@ class TestGraphQLEndpoint:
 
 
 # ============================================================================
-# TestLabelingUi (F5)
+# TestComponentRoutes — labeling component system
 # ============================================================================
 
 
-class TestLabelingUi:
-    """Test the labeling UI REST endpoint."""
+class TestComponentRoutes:
+    """Test the labeling component HTTP routes."""
 
-    @patch("pixie_sdk.server.db")
-    def test_returns_html(self, mock_db, client):
-        """GET /labeling-ui/{id} returns HTML with entry data."""
-        entry_id = uuid4()
-        mock_db.get_db = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_db.get_db.return_value = mock_conn
-        mock_db.get_data_entry = AsyncMock(
-            return_value={
-                "id": str(entry_id),
-                "dataset_id": str(uuid4()),
-                "data": {"prompt": "hello", "response": "world"},
-            }
+    def test_list_components_empty(self, client):
+        """GET /api/components returns empty list when nothing registered."""
+        response = client.get("/api/components")
+        assert response.status_code == 200
+        assert response.json() == {"slots": []}
+
+    def test_list_components_with_entries(self, client, tmp_path):
+        """GET /api/components returns registered slot names."""
+        bundle = tmp_path / "demo.js"
+        bundle.write_text("export default function Demo() {}")
+        set_component(
+            "demo",
+            RegisteredComponent(
+                slot="demo", src_path=tmp_path / "demo.tsx", bundle_path=bundle
+            ),
         )
 
-        response = client.get(f"/labeling-ui/{entry_id}")
+        response = client.get("/api/components")
+        assert response.status_code == 200
+        assert response.json() == {"slots": ["demo"]}
+
+    def test_serve_component_not_found(self, client):
+        """GET /api/components/missing.js returns 404."""
+        response = client.get("/api/components/missing.js")
+        assert response.status_code == 404
+
+    def test_serve_component_bundle(self, client, tmp_path):
+        """GET /api/components/{slot}.js serves the bundle file."""
+        bundle = tmp_path / "demo.js"
+        bundle.write_text("export default function Demo() {}")
+        set_component(
+            "demo",
+            RegisteredComponent(
+                slot="demo", src_path=tmp_path / "demo.tsx", bundle_path=bundle
+            ),
+        )
+
+        response = client.get("/api/components/demo.js")
+        assert response.status_code == 200
+        assert "javascript" in response.headers["content-type"]
+
+    def test_labeling_page_not_found(self, client):
+        """GET /labeling/missing?id=x returns 404."""
+        response = client.get("/labeling/missing?id=x")
+        assert response.status_code == 404
+
+    def test_labeling_page_returns_html(self, client, tmp_path):
+        """GET /labeling/{name}?id=x returns the HTML shell."""
+        bundle = tmp_path / "demo.js"
+        bundle.write_text("export default function Demo() {}")
+        set_component(
+            "demo",
+            RegisteredComponent(
+                slot="demo", src_path=tmp_path / "demo.tsx", bundle_path=bundle
+            ),
+        )
+
+        response = client.get("/labeling/demo?id=test123")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
-        assert "hello" in response.text or "prompt" in response.text
+        assert "demo" in response.text
+        assert "test123" in response.text
 
-    @patch("pixie_sdk.server.db")
-    def test_not_found(self, mock_db, client):
-        """GET /labeling-ui/{random_id} returns 404."""
-        mock_db.get_db = AsyncMock()
-        mock_conn = AsyncMock()
-        mock_db.get_db.return_value = mock_conn
-        mock_db.get_data_entry = AsyncMock(return_value=None)
+    def test_input_returns_data_entry(self, client):
+        """GET /api/inputs/{id} returns the data entry from the DB."""
+        entry_id = str(uuid4())
+        entry_data = {"input": "hello", "output": "world"}
+        mock_entry = {
+            "id": entry_id,
+            "dataset_id": str(uuid4()),
+            "data": entry_data,
+        }
 
-        response = client.get(f"/labeling-ui/{uuid4()}")
-        assert response.status_code == 404
+        with patch("pixie_sdk._components._server.db") as mock_db:
+            mock_conn = AsyncMock()
+            mock_db.get_db = AsyncMock(return_value=mock_conn)
+            mock_db.get_local_entry_id = AsyncMock(return_value=None)
+            mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
+            mock_conn.close = AsyncMock()
+
+            response = client.get(f"/api/inputs/{entry_id}")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["input"] == "hello"
+            assert data["output"] == "world"
+            assert data["id"] == entry_id
+
+    def test_input_resolves_remote_id(self, client):
+        """GET /api/inputs/{remote_id} resolves via test_case_map."""
+        remote_id = str(uuid4())
+        local_id = str(uuid4())
+        entry_data = {"prompt": "hi", "response": "bye"}
+        mock_entry = {
+            "id": local_id,
+            "dataset_id": str(uuid4()),
+            "data": entry_data,
+        }
+
+        with patch("pixie_sdk._components._server.db") as mock_db:
+            mock_conn = AsyncMock()
+            mock_db.get_db = AsyncMock(return_value=mock_conn)
+            mock_db.get_local_entry_id = AsyncMock(return_value=local_id)
+            mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
+            mock_conn.close = AsyncMock()
+
+            response = client.get(f"/api/inputs/{remote_id}")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["prompt"] == "hi"
+            assert data["id"] == local_id
+
+    def test_input_not_found(self, client):
+        """GET /api/inputs/{id} returns 404 for missing entry."""
+        entry_id = str(uuid4())
+
+        with patch("pixie_sdk._components._server.db") as mock_db:
+            mock_conn = AsyncMock()
+            mock_db.get_db = AsyncMock(return_value=mock_conn)
+            mock_db.get_local_entry_id = AsyncMock(return_value=None)
+            mock_db.get_data_entry = AsyncMock(return_value=None)
+            mock_conn.close = AsyncMock()
+
+            response = client.get(f"/api/inputs/{entry_id}")
+            assert response.status_code == 404
 
 
 # ============================================================================

@@ -328,6 +328,7 @@ export function TestSuiteView() {
         open={labelingOpen}
         onClose={() => setLabelingOpen(false)}
         entryId={selectedEntryId}
+        testSuiteId={testSuiteId}
         metrics={metrics.map((m) => ({
           id: m.id as string,
           name: m.name,
