@@ -11,6 +11,81 @@
 
 This applies to all external data sources: remote GraphQL servers, databases, file contents, API schemas, and any other state that must be observed rather than assumed.
 
+## CRITICAL: Simplicity First — Minimal Complexity
+
+**Every change must use the simplest solution that solves the actual problem.** Complexity is a cost that compounds over time. Before implementing, ask:
+
+1. **What is the actual root cause?** Diagnose the real problem before writing code. A missing auth token is an auth problem — not a "resolution strategy" problem.
+2. **Is there a simpler fix?** If the fix requires adding new abstractions, new resolution steps, new conversion layers, or new props — stop and ask whether the existing architecture already has a simpler path.
+3. **Does this add concepts?** Every new function, parameter, resolution step, or abstraction is a concept someone must understand. Justify each one against the alternative of doing less.
+4. **Am I working around a bug or fixing it?** Workarounds add complexity. Fixes remove it. If auth is broken, fix auth — don't add alternative code paths that avoid auth.
+
+### Red Flags That Signal Over-Engineering
+
+| Red Flag | Ask Yourself |
+|---|---|
+| Adding a new resolution/conversion step | Can the existing path work if I fix the actual bug? |
+| Changing what the frontend passes (UUID → name, etc.) | Is the current contract fine if the backend works correctly? |
+| Adding `encodeURIComponent` or string transforms | Am I working around a mismatch I introduced? |
+| Creating utility functions for one use site | Is this premature abstraction? |
+| "The frontend should prefer X because Y" | Or should the backend just work with what it already receives? |
+
+### The Simplicity Test
+
+Before committing a fix, verify:
+- **Could this change be smaller?** If yes, make it smaller.
+- **Does this change the API contract?** If yes, is that strictly necessary?
+- **Would a senior engineer look at this diff and ask "why didn't you just..."?** If yes, do the simpler thing.
+
+## CRITICAL: End-to-End Verification for Cross-Boundary Changes
+
+**When a change spans both frontend and backend, unit tests alone are NOT sufficient.** You must also verify the integration works end-to-end.
+
+### After any cross-boundary change:
+
+1. **Start the SDK server** (`make dev-sdk` or `cd sdk && uv run python -m pixie_sdk.server`)
+2. **Hit the actual endpoint** with `curl` or a browser to confirm the full request/response cycle works
+3. **Verify with real data** — not just mock data in unit tests
+4. **If the server can't start** (missing deps, port conflict), fix it before declaring the change complete
+
+### Why this matters
+
+Mocked unit tests can pass while the real integration is broken. This is especially true for:
+- URL routing (frontend constructs URL, server parses it)
+- Data serialization (frontend sends JSON, server deserializes it)
+- File-path conventions (scaffold creates files, server discovers them)
+- **Authentication and authorization** — mocked tests skip auth entirely, but real servers require tokens
+
+A 5-second `curl` request catches bugs that 100 unit tests miss.
+
+### Common Pitfalls That Require E2E Verification
+
+| Pitfall | Mocked Test Result | Real Behaviour |
+|---|---|---|
+| Remote server requires auth token | ✅ Mock returns data | ❌ `RuntimeError: Authentication required` |
+| Frontend URL-encodes path params | ✅ Mock never parses URL | ❌ Server receives `%20` instead of space |
+| Exception silently caught in `except Exception` | ✅ Test mocks the happy path | ❌ Error swallowed, returns None/404 |
+| HTML file doesn't exist on disk | ✅ Mock returns file content | ❌ `FileNotFoundError` |
+
+### Mandatory Verification Steps
+
+**Never declare a cross-boundary change complete without these steps:**
+
+```bash
+# 1. Kill old server, start fresh
+lsof -ti:8100 | xargs -r kill -9
+cd sdk && uv run uvicorn pixie_sdk.server:app --port 8100 &
+
+# 2. Verify the exact endpoint the frontend will hit
+curl -s http://localhost:8100/<your-endpoint>
+# Expected: the correct response (NOT a 404, 500, or auth error)
+
+# 3. Check server logs for silent errors
+# Look for WARNING, ERROR, or traceback in server output
+```
+
+If `curl` returns an error, **the bug is not fixed** — regardless of how many unit tests pass.
+
 ## Project Overview
 
 pixie-evals is an evaluation platform with a Python SDK backend and a React/TypeScript frontend. The frontend uses Vite, MUI, Apollo Client, Zustand, and GraphQL Codegen.
@@ -590,6 +665,52 @@ describe("MyComponent", () => {
 - **Extract shared helpers** when the same logic appears in 2+ places.
 - **Pure utilities** go in `lib/`, **React-specific logic** goes in `hooks/`, **reusable UI** goes in `components/`.
 
+### CRITICAL: Never Duplicate Logic Across System Boundaries (Frontend ↔ Backend)
+
+**This is the most important DRY rule in this monorepo.** The SDK backend (Python) and the frontend (TypeScript) are separate codebases with separate languages and separate test suites. Duplicating conversion logic, naming conventions, or business rules across both is **always wrong** because:
+
+1. **The implementations can silently diverge** — different edge-case handling, different regex behavior, different Unicode handling.
+2. **There is no cross-language test** that catches mismatches — each codebase's tests pass independently while the integration is broken.
+3. **Every future change** must be made in two places, in two languages, by potentially different people.
+
+**The rule: When the backend already owns a piece of logic, the frontend must NOT re-implement it. Instead, pass the raw identifier to the backend and let the backend resolve it.**
+
+**❌ WRONG** — duplicating name-to-slug conversion in both Python and TypeScript:
+```python
+# Backend (Python) — scaffold.py
+def to_snake_case(name: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", name)
+    slug = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", slug)
+    return slug.strip("_").lower()
+```
+```typescript
+// Frontend (TypeScript) — stringUtils.ts — DUPLICATED!
+export function toSnakeCase(name: string): string {
+  let slug = name.replace(/[^a-zA-Z0-9]+/g, "_");
+  slug = slug.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+  return slug.replace(/^_+|_+$/g, "").toLowerCase();
+}
+```
+
+**✅ CORRECT** — frontend passes the UUID, backend resolves it:
+```typescript
+// Frontend — just pass the test suite ID, no conversion needed
+<iframe src={`${SDK_BASE_URL}/labeling/${testSuiteId}?id=${entryId}`} />
+```
+```python
+# Backend — server.py resolves UUID → name → slug using the SAME function
+component = get_component(component_name)  # direct slot lookup
+if component is None and _is_uuid(component_name):
+    suite = await remote_client.get_test_suite(UUID(component_name))
+    slot = to_snake_case(suite["name"])  # same function as scaffold
+    component = get_component(slot)
+```
+
+**When you identify a need for conversion/transformation logic:**
+1. **Ask: does the backend already do this?** If yes, make the backend expose it (via an API route, a resolver, or by accepting the raw input and converting internally).
+2. **Never port Python logic to TypeScript** (or vice versa) just because "it's simpler" — it creates a maintenance trap.
+3. **If genuinely needed on both sides** (rare), extract it as a shared spec with cross-language tests that verify identical output for a canonical set of inputs.
+
 ### Shared Components and Hooks
 
 **The same UI element rendered in different contexts must use the same base component.** When two places render the same visual element (e.g., a file upload widget inside a dialog vs. embedded in a page), extract a shared component and use it in both places.
@@ -879,3 +1000,26 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 10. ✅ `changelogs/<feature>.md` created or updated
 11. ✅ Auto-generated docs regenerated and committed (if applicable)
 12. ✅ Generated GraphQL types (`frontend/src/generated/`, `sdk/.../generated/`) committed alongside operation changes
+
+---
+
+## CRITICAL: Automatic Documentation Updates After Every Change
+
+**Documentation updates are NOT a separate task — they are part of the implementation.** Every code change must be immediately followed by documentation updates before moving to the next task.
+
+### After every code change, automatically perform these steps:
+
+1. **Update docstrings/JSDoc**: If you changed a function's behavior, parameters, or return type, update its docstring in the same edit.
+2. **Update `README.md`**: If the change affects CLI commands, project structure, feature lists, or setup steps, update the README immediately.
+3. **Update `specs/`**: If the change affects architecture, data flow, or system behavior, update the relevant spec file (e.g., `specs/overview.md`, `specs/labeling_ui.md`).
+4. **Create/update `changelogs/<feature>.md`**: For any non-trivial change, write a changelog entry describing what changed, why, and which files were affected.
+5. **Regenerate auto-generated docs**: If the project has doc-generation scripts, run them and commit the output.
+
+### Why this matters
+
+Documentation drift happens when updates are deferred to "later" — later never comes. By treating documentation as part of the implementation (not a follow-up), the docs stay accurate and the next developer (or AI agent) working on the code has correct context.
+
+**Do NOT:**
+- Finish all code changes and then try to "batch update" documentation at the end
+- Skip documentation for "small" changes — small changes accumulate into large drift
+- Leave TODO comments promising to update docs later

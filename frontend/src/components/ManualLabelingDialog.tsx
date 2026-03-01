@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -11,18 +11,19 @@ import {
   Slider,
   Stack,
   Divider,
+  CircularProgress,
+  Alert,
 } from "@mui/material";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
 import { SDK_BASE_URL } from "../lib/env";
+import { useAuthStore } from "../lib/store";
 
 interface ManualLabelingDialogProps {
   open: boolean;
   onClose: () => void;
-  /** UUID of the data entry to render in the SDK labeling iframe. */
-  entryId?: string;
-  /** UUID of the test suite — used as the labeling component route. */
-  testSuiteId?: string;
+  /** Remote test case UUID to render in the labeling iframe. */
+  testCaseId?: string;
   /** Metrics configured for the test suite. */
   metrics?: Array<{ id: string; name: string }>;
   /** Called when user saves ratings. */
@@ -34,21 +35,59 @@ interface ManualLabelingDialogProps {
 /**
  * Manual labeling dialog.
  *
- * Renders the next recommended candidate via the SDK server's labeling
- * UI in an iframe. Below the iframe, displays one rating slider per
- * metric, an optional notes field, and Save/Skip buttons.
+ * Fetches the labeling HTML from the SDK server using the standard
+ * Authorization header and renders it via iframe srcdoc. Below the
+ * iframe, displays one rating slider per metric, an optional notes
+ * field, and Save/Skip buttons.
  */
 export function ManualLabelingDialog({
   open,
   onClose,
-  entryId,
-  testSuiteId,
+  testCaseId,
   metrics = [],
   onSave,
   onSkip,
 }: ManualLabelingDialogProps) {
+  const token = useAuthStore((state) => state.token);
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState("");
+
+  // Fetch labeling HTML from SDK server with Authorization header
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!testCaseId || !open) {
+      setHtmlContent(null);
+      setFetchError(null);
+      return;
+    }
+
+    setFetchLoading(true);
+    setFetchError(null);
+
+    fetch(`${SDK_BASE_URL}/labeling/${testCaseId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res
+            .json()
+            .catch(() => ({ detail: res.statusText }));
+          throw new Error(body.detail || res.statusText);
+        }
+        return res.text();
+      })
+      .then((html) => {
+        setHtmlContent(html);
+        setFetchLoading(false);
+      })
+      .catch((err: Error) => {
+        setFetchError(err.message);
+        setFetchLoading(false);
+      });
+  }, [testCaseId, token, open]);
 
   const handleRatingChange = (metricId: string, value: number) => {
     setRatings((prev) => ({ ...prev, [metricId]: value }));
@@ -74,18 +113,36 @@ export function ManualLabelingDialog({
       <DialogTitle>Manual Labeling</DialogTitle>
       <DialogContent>
         {/* SDK labeling iframe */}
-        {entryId ? (
+        {testCaseId ? (
           <Box sx={{ mb: 3 }}>
-            <iframe
-              src={`${SDK_BASE_URL}/labeling/${testSuiteId}?id=${entryId}`}
-              title="Labeling UI"
-              style={{
-                width: "100%",
-                height: "400px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-              }}
-            />
+            {fetchLoading ? (
+              <Box
+                sx={{
+                  width: "100%",
+                  height: "400px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CircularProgress size={32} />
+              </Box>
+            ) : fetchError ? (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {fetchError}
+              </Alert>
+            ) : htmlContent ? (
+              <iframe
+                srcDoc={htmlContent}
+                title="Labeling UI"
+                style={{
+                  width: "100%",
+                  height: "400px",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                }}
+              />
+            ) : null}
           </Box>
         ) : (
           <Box sx={{ py: 4, textAlign: "center" }}>
@@ -151,7 +208,7 @@ export function ManualLabelingDialog({
           variant="contained"
           startIcon={<SaveRoundedIcon />}
           onClick={handleSave}
-          disabled={!entryId}
+          disabled={!testCaseId}
         >
           Save
         </Button>

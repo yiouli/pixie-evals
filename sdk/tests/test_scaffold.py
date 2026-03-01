@@ -11,32 +11,32 @@ from pixie_sdk.components import PLACEHOLDER_ATTR
 from pixie_sdk.components.scaffold import (
     _build_fields,
     _json_schema_to_ts_type,
-    _to_snake_case,
+    to_snake_case,
     scaffold_component,
 )
 
 # ============================================================================
-# _to_snake_case
+# to_snake_case
 # ============================================================================
 
 
 class TestToSnakeCase:
-    """Test _to_snake_case helper."""
+    """Test to_snake_case helper."""
 
     def test_spaces(self):
-        assert _to_snake_case("Trace Comparison") == "trace_comparison"
+        assert to_snake_case("Trace Comparison") == "trace_comparison"
 
     def test_camel_case(self):
-        assert _to_snake_case("TraceComparison") == "trace_comparison"
+        assert to_snake_case("TraceComparison") == "trace_comparison"
 
     def test_already_snake(self):
-        assert _to_snake_case("trace_comparison") == "trace_comparison"
+        assert to_snake_case("trace_comparison") == "trace_comparison"
 
     def test_special_chars(self):
-        assert _to_snake_case("LLM Output - Review!") == "llm_output_review"
+        assert to_snake_case("LLM Output - Review!") == "llm_output_review"
 
     def test_mixed(self):
-        assert _to_snake_case("My TestSuite v2") == "my_test_suite_v2"
+        assert to_snake_case("My TestSuite v2") == "my_test_suite_v2"
 
 
 # ============================================================================

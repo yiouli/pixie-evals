@@ -7,7 +7,7 @@ Users define a custom labeling page per test suite as a **plain HTML file**. The
 1. **Discovers** all `.html` files in a designated folder automatically at startup.
 2. **Scaffolds** new HTML + TypeScript definition files via the `scaffoldLabelingComponent` GraphQL mutation.
 3. **Injects** the input object into the HTML at serve time by replacing a known placeholder script block with the actual data.
-4. **Serves** each page at `/labeling/<suite_name>?id=<input_object_id>`.
+4. **Serves** each page at `/labeling/<test_case_id>` (remote test case UUID) with `Authorization: Bearer` header authentication.
 
 No bundling, no build step, no framework lock-in. Users can use Vanilla JS, a CDN-loaded library, or anything that runs in a browser.
 
@@ -69,7 +69,8 @@ User's project/
     llm_output_review.html
 
 FastAPI routes:
-  GET /labeling/{suite_name}?id={input_object_id}   → HTML page with data injected
+  GET /labeling/{test_case_id}                      → HTML page with data injected
+      (Authorization: Bearer <token> header)           (requires auth)
   GET /api/inputs/{id}                              → raw input object (JSON)
   GET /api/components                               → list of registered slot names
 ```
@@ -127,18 +128,33 @@ Called once in the FastAPI lifespan. Registers every `.html` file using its stem
 
 ## `components/server.py`
 
-#### `GET /labeling/{component_name}?id={input_object_id}`
+#### `GET /labeling/{test_case_id}` (requires `Authorization: Bearer <token>` header)
 
-1. Look up `component_name` in the registry. Return 404 if not found.
-2. Read the HTML file from disk.
-3. Fetch the input object from SQLite by `id`.
-4. Replace the placeholder block:
+The `test_case_id` is a **remote test case UUID**.  The frontend fetches
+this endpoint using `fetch()` with the Authorization header and renders
+the response via `<iframe srcdoc=...>`.
+
+Resolution flow:
+
+1. **Authenticate** — extract the JWT from the `Authorization: Bearer`
+   header.  Return 401 if missing.
+2. **Validate UUID** — parse `test_case_id` as a UUID.  Return 400 if
+   invalid.
+3. **Resolve test case** — call `RemoteClient(auth_token=token).get_test_case(uuid)`
+   to fetch the test case and its `testSuite` foreign key.
+4. **Resolve test suite** — call `RemoteClient.get_test_suite(suite_id)`
+   to get the suite name.
+5. **Find labeling page** — convert suite name to snake_case, look up
+   the slot in the registry.  Return 404 if not found.
+6. Read the HTML file from disk.
+7. Fetch the input data from SQLite via `test_case_map` → `data_entries`.
+8. Replace the placeholder block:
    ```python
    pattern = rf"<script\s+{re.escape(PLACEHOLDER_ATTR)}>[^<]*</script>"
    injection = f'<script {PLACEHOLDER_ATTR}>\nwindow.INPUT={json.dumps(data)};\n</script>'
    html = re.sub(pattern, injection, html, flags=re.DOTALL)
    ```
-5. Return as `HTMLResponse`.
+9. Return as `HTMLResponse`.
 
 #### `GET /api/inputs/{id}`
 
@@ -205,11 +221,14 @@ Returns the relative path of the created `.html` file (e.g. `"labeling/trace_com
 
 ## URL Routing Summary
 
+The labeling endpoint uses the **remote test case UUID** as the sole URL parameter. The server resolves the test suite name internally.
+
 | Test suite name | Normalized name | HTML file | Route |
 |----------------|----------------|-----------|-------|
-| `Trace Comparison` | `trace_comparison` | `labeling/trace_comparison.html` | `GET /labeling/trace_comparison?id=<uuid>` |
-| `LLM Output Review` | `llm_output_review` | `labeling/llm_output_review.html` | `GET /labeling/llm_output_review?id=<uuid>` |
-| `My Suite v2` | `my_suite_v2` | `labeling/my_suite_v2.html` | `GET /labeling/my_suite_v2?id=<uuid>` |
+| `Trace Comparison` | `trace_comparison` | `labeling/trace_comparison.html` | `GET /labeling/{test_case_uuid}` |
+| `LLM Output Review` | `llm_output_review` | `labeling/llm_output_review.html` | `GET /labeling/{test_case_uuid}` |
+
+All routes require the `Authorization: Bearer <token>` header.
 
 ---
 
@@ -235,16 +254,25 @@ Two files are created in `labeling/`:
 
 ### Access the labeling page
 
-```
-http://localhost:8100/labeling/trace_comparison?id=<entry_uuid>
+The frontend opens the Manual Label dialog, which calls:
+
+```javascript
+fetch(`${SDK_BASE_URL}/labeling/${testCaseId}`, {
+  headers: { Authorization: `Bearer ${token}` },
+})
 ```
 
-What happens:
-1. FastAPI looks up `trace_comparison` in the registry → found
-2. Reads `labeling/trace_comparison.html` from disk
-3. Fetches the input object from SQLite by `id`
-4. Replaces the `<script pixie-evals-labeling-input>` block with `window.INPUT={...}`
-5. Returns the modified HTML — the browser sees the injected data immediately
+What happens on the server:
+1. FastAPI extracts the JWT from the `Authorization` header
+2. Queries the remote pixie-server for the test case → gets its `testSuite` FK
+3. Queries the remote pixie-server for the test suite → gets its name
+4. Converts the suite name to snake_case → looks up the slot in the registry
+5. Reads the HTML file from disk
+6. Fetches the input data from local SQLite via `test_case_map` → `data_entries`
+7. Replaces the `<script pixie-evals-labeling-input>` block with `window.INPUT={...}`
+8. Returns the modified HTML
+
+The frontend renders it via `<iframe srcDoc={htmlContent}>`.
 
 ---
 
@@ -254,4 +282,5 @@ What happens:
 - `test_scanner.py`: Temp dir with two `.html` files. Assert two entries registered. Assert non-`.html` files are ignored. Assert missing dir returns empty list.
 - `test_scaffold.py`: Assert `.html` and `.d.ts` files created with correct names (snake_case) and content (placeholder present, suite name in title).
 - `test_components_init.py`: Assert `set_components_dir` updates the dir; assert `PLACEHOLDER_ATTR` equals `"pixie-evals-labeling-input"`.
-- `test_e2e_labeling.py`: Full integration — create a test suite + entry, scaffold, serve, fetch `/labeling/<name>?id=<id>`, assert `window.INPUT` is injected with the correct JSON.
+- `test_server.py`: Labeling page requires `Authorization` header (401 without). Full pipeline with auth header (mock RemoteClient for test case + suite resolution). 404 when test case not found. 404 when no HTML registered for suite.
+- `test_e2e_labeling.py`: Full integration — create a test suite + entry, scaffold, serve via `Authorization: Bearer` header, assert `window.INPUT` is injected with the correct JSON.

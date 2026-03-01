@@ -327,8 +327,7 @@ export function TestSuiteView() {
       <ManualLabelingDialog
         open={labelingOpen}
         onClose={() => setLabelingOpen(false)}
-        entryId={selectedEntryId}
-        testSuiteId={testSuiteId}
+        testCaseId={selectedEntryId}
         metrics={metrics.map((m) => ({
           id: m.id as string,
           name: m.name,

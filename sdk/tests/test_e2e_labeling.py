@@ -282,7 +282,7 @@ class TestE2EInputEndpoint:
 
 
 class TestE2ELabelingPage:
-    """Test the /labeling/{component_name}?id=... page route."""
+    """Test the /labeling/{test_case_id} page route."""
 
     @pytest.mark.asyncio
     async def test_registered_component_returns_html_with_input(self):
@@ -317,6 +317,8 @@ class TestE2ELabelingPage:
             ),
         )
 
+        test_case_id = str(uuid4())
+        test_suite_id = str(uuid4())
         entry_id = str(uuid4())
         entry_data = {"foo": "bar"}
         mock_entry = {
@@ -325,12 +327,24 @@ class TestE2ELabelingPage:
             "data": entry_data,
         }
 
-        with patch("pixie_sdk.components.server.db") as mock_db:
+        with (
+            patch("pixie_sdk.components.server.db") as mock_db,
+            patch("pixie_sdk.components.server.RemoteClient") as MockClient,
+        ):
             mock_conn = AsyncMock()
             mock_db.get_db = AsyncMock(return_value=mock_conn)
-            mock_db.get_local_entry_id = AsyncMock(return_value=None)
+            mock_db.get_local_entry_id = AsyncMock(return_value=entry_id)
             mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
             mock_conn.close = AsyncMock()
+
+            mock_client = AsyncMock()
+            mock_client.get_test_case = AsyncMock(
+                return_value={"id": test_case_id, "testSuite": test_suite_id}
+            )
+            mock_client.get_test_suite = AsyncMock(
+                return_value={"id": test_suite_id, "name": "My Comp"}
+            )
+            MockClient.return_value = mock_client
 
             from fastapi import FastAPI
 
@@ -343,7 +357,10 @@ class TestE2ELabelingPage:
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                resp = await client.get(f"/labeling/my_comp?id={entry_id}")
+                resp = await client.get(
+                    f"/labeling/{test_case_id}",
+                    headers={"Authorization": "Bearer test-jwt"},
+                )
 
             assert resp.status_code == 200
             html = resp.text
@@ -359,20 +376,38 @@ class TestE2ELabelingPage:
 
     @pytest.mark.asyncio
     async def test_unregistered_component_returns_404(self):
-        """Requesting an unregistered component returns 404."""
+        """Requesting a test case whose suite has no labeling page returns 404."""
         from pixie_sdk.components.registry import clear
 
         clear()
 
-        from fastapi import FastAPI
+        test_case_id = str(uuid4())
+        test_suite_id = str(uuid4())
 
-        from pixie_sdk.components.server import router
+        with patch("pixie_sdk.components.server.RemoteClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.get_test_case = AsyncMock(
+                return_value={"id": test_case_id, "testSuite": test_suite_id}
+            )
+            mock_client.get_test_suite = AsyncMock(
+                return_value={"id": test_suite_id, "name": "Nonexistent"}
+            )
+            MockClient.return_value = mock_client
 
-        test_app = FastAPI()
-        test_app.include_router(router)
+            from fastapi import FastAPI
 
-        transport = ASGITransport(app=test_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get(f"/labeling/nonexistent?id={uuid4()}")
+            from pixie_sdk.components.server import router
+
+            test_app = FastAPI()
+            test_app.include_router(router)
+
+            transport = ASGITransport(app=test_app)
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.get(
+                    f"/labeling/{test_case_id}",
+                    headers={"Authorization": "Bearer test-jwt"},
+                )
 
         assert resp.status_code == 404

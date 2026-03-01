@@ -89,6 +89,39 @@ class RemoteClient:
 
         return body.get("data", {})
 
+    async def get_test_case(
+        self,
+        test_case_id: UUID,
+    ) -> dict[str, Any] | None:
+        """Fetch a single test case by ID from the remote server.
+
+        Uses ``getTestCasesWithLabel`` with a single-item list.
+
+        Args:
+            test_case_id: UUID of the test case.
+
+        Returns:
+            Dict with ``id``, ``testSuite``, ``description``, ``createdAt``,
+            or ``None`` if not found.
+        """
+        query = """
+        query GetTestCasesWithLabel($ids: [UUID!]!) {
+            getTestCasesWithLabel(ids: $ids) {
+                testCase {
+                    id
+                    testSuite
+                    description
+                    createdAt
+                }
+            }
+        }
+        """
+        data = await self._execute(query, {"ids": [str(test_case_id)]})
+        results: list[dict[str, Any]] = data.get("getTestCasesWithLabel", [])
+        if results:
+            return dict(results[0]["testCase"])
+        return None
+
     async def get_test_suite(
         self,
         test_suite_id: UUID,

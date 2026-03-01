@@ -89,13 +89,17 @@ declare const INPUT: InputProps;
 # ============================================================================
 
 
-def _to_snake_case(name: str) -> str:
+def to_snake_case(name: str) -> str:
     """Convert a human-readable name to snake_case.
 
+    This is the **single source of truth** for test-suite-name → filename
+    conversion used by both the scaffold generator and the labeling page
+    server route when resolving a test-suite UUID to a slot name.
+
     Examples:
-        >>> _to_snake_case("Trace Comparison")
+        >>> to_snake_case("Trace Comparison")
         'trace_comparison'
-        >>> _to_snake_case("LLM Output Review")
+        >>> to_snake_case("LLM Output Review")
         'llm_output_review'
     """
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", name)
@@ -197,7 +201,7 @@ async def scaffold_component(
         raise ValueError(f"Test suite {test_suite_id} not found on the remote server.")
 
     suite_name: str = suite.get("name", "LabelingPage")
-    snake_name = _to_snake_case(suite_name)
+    snake_name = to_snake_case(suite_name)
 
     # Extract input schema from config
     config = suite.get("config") or {}

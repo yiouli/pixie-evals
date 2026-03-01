@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
 
@@ -12,12 +12,39 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
   return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
 }
 
+// Mock the auth store to provide a token
+vi.mock("../lib/store", () => ({
+  useAuthStore: (selector: (state: { token: string | null }) => unknown) =>
+    selector({ token: "mock-jwt-token" }),
+}));
+
+// Mock the env module
+vi.mock("../lib/env", () => ({
+  SDK_BASE_URL: "http://localhost:8100",
+}));
+
 const SAMPLE_METRICS = [
   { id: "m1", name: "Accuracy" },
   { id: "m2", name: "Relevance" },
 ];
 
+// Helper to set up global fetch mock
+function mockFetch(response: { ok: boolean; text?: string; json?: object }) {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: response.ok,
+    text: () => Promise.resolve(response.text ?? ""),
+    json: () => Promise.resolve(response.json ?? {}),
+    statusText: "Not Found",
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 describe("ManualLabelingDialog", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("should render the dialog when open", () => {
     render(
       <TestWrapper>
@@ -36,7 +63,7 @@ describe("ManualLabelingDialog", () => {
     expect(screen.queryByText("Manual Labeling")).not.toBeInTheDocument();
   });
 
-  it("should show 'no candidate' message when no entryId", () => {
+  it("should show 'no candidate' message when no testCaseId", () => {
     render(
       <TestWrapper>
         <ManualLabelingDialog open={true} onClose={vi.fn()} />
@@ -47,40 +74,72 @@ describe("ManualLabelingDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("should render an iframe when entryId is provided", () => {
+  it("should fetch labeling HTML with Authorization header", async () => {
+    const fetchMock = mockFetch({
+      ok: true,
+      text: "<html><body>Labeling UI</body></html>",
+    });
+
     render(
       <TestWrapper>
         <ManualLabelingDialog
           open={true}
           onClose={vi.fn()}
-          entryId="entry-123"
-          testSuiteId="adf79684-0327-4261-9f6f-70719c0c947b"
+          testCaseId="test-case-123"
         />
       </TestWrapper>,
     );
-    const iframe = screen.getByTitle("Labeling UI");
-    expect(iframe).toBeInTheDocument();
-    const src = iframe.getAttribute("src") ?? "";
-    expect(src).toContain("/labeling/adf79684-0327-4261-9f6f-70719c0c947b");
-    expect(src).toContain("id=entry-123");
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:8100/labeling/test-case-123",
+        { headers: { Authorization: "Bearer mock-jwt-token" } },
+      );
+    });
   });
 
-  it("should include test suite ID in iframe src", () => {
-    const tsId = "12345678-1234-1234-1234-123456789abc";
+  it("should render iframe with srcdoc after successful fetch", async () => {
+    mockFetch({
+      ok: true,
+      text: "<html><body>Labeling Content</body></html>",
+    });
+
     render(
       <TestWrapper>
         <ManualLabelingDialog
           open={true}
           onClose={vi.fn()}
-          entryId="entry-456"
-          testSuiteId={tsId}
+          testCaseId="test-case-456"
         />
       </TestWrapper>,
     );
-    const iframe = screen.getByTitle("Labeling UI");
-    const src = iframe.getAttribute("src") ?? "";
-    expect(src).toContain(`/labeling/${tsId}`);
-    expect(src).toContain("id=entry-456");
+
+    await waitFor(() => {
+      const iframe = screen.getByTitle("Labeling UI");
+      expect(iframe).toBeInTheDocument();
+      expect(iframe.getAttribute("srcdoc")).toContain("Labeling Content");
+    });
+  });
+
+  it("should show error when fetch fails", async () => {
+    mockFetch({
+      ok: false,
+      json: { detail: "Test case not found" },
+    });
+
+    render(
+      <TestWrapper>
+        <ManualLabelingDialog
+          open={true}
+          onClose={vi.fn()}
+          testCaseId="bad-id"
+        />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Test case not found")).toBeInTheDocument();
+    });
   });
 
   it("should render metric sliders", () => {
@@ -119,7 +178,7 @@ describe("ManualLabelingDialog", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
   });
 
-  it("should disable Save when no entryId", () => {
+  it("should disable Save when no testCaseId", () => {
     render(
       <TestWrapper>
         <ManualLabelingDialog open={true} onClose={vi.fn()} />

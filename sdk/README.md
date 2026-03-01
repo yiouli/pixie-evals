@@ -25,7 +25,7 @@ Access the interactive playground at http://localhost:8100/graphql
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/graphql` | Strawberry GraphQL endpoint (queries, mutations, subscriptions) |
-| `GET` | `/labeling/{suite_name}?id={entry_id}` | Serve custom labeling HTML page with input data injected |
+| `GET` | `/labeling/{test_case_id}` | Serve custom labeling HTML page (requires `Authorization: Bearer` header) |
 | `GET` | `/api/inputs/{id}` | Load a raw input object from SQLite by entry/test-case UUID |
 | `GET` | `/api/components` | List all registered labeling page slot names |
 | `GET` | `/health` | Health check |
@@ -131,11 +131,16 @@ set_components_dir("./my_labeling_pages")
 
 ### URL routing
 
-The page for suite `"My Test Suite"` is served at:
+The labeling page is accessed via the **remote test case UUID**:
 
 ```
-GET /labeling/my_test_suite?id=<entry_uuid>
+GET /labeling/{test_case_id}
+Authorization: Bearer <jwt_token>
 ```
 
-The slot name (URL segment) is the HTML filename stem — the same snake_case
-name used by the scaffold.
+The server resolves everything from the test case ID:
+1. Authenticates with the JWT token
+2. Fetches the test case from the remote pixie-server to get the test suite
+3. Converts the test suite name to snake_case to find the HTML file
+4. Fetches the input data from local SQLite via `test_case_map`
+5. Injects the data and serves the HTML

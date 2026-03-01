@@ -5,14 +5,13 @@ Provides routes to:
 - List all registered component slot names.
 - Load raw input objects from the local SQLite database.
 
-The key mechanism: each user-authored ``.html`` file contains a
-``<script pixie-evals-labeling-input>`` placeholder block.  When the
-page is requested, the framework reads the HTML, fetches the input object
-from SQLite, and replaces the placeholder block with::
+The labeling endpoint accepts a **remote test case UUID** and resolves
+everything from it: the test suite (via the remote pixie-server), the
+correct HTML template (via the test suite name → slot), and the input
+data (via the local SQLite ``test_case_map``).
 
-    <script pixie-evals-labeling-input>
-    window.INPUT = { ...data... };
-    </script>
+Authentication is via the standard ``Authorization: Bearer <token>``
+header, which is forwarded to the remote pixie-server.
 
 Mount this router on the main FastAPI app::
 
@@ -27,15 +26,23 @@ See Also:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import HTMLResponse
 
 from pixie_sdk import db
 from pixie_sdk.components import PLACEHOLDER_ATTR
-from pixie_sdk.components.registry import get_component, list_slots
+from pixie_sdk.components.registry import (
+    get_component,
+    list_slots,
+)
+from pixie_sdk.components.scaffold import to_snake_case
+from pixie_sdk.remote_client import RemoteClient
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -60,43 +67,99 @@ async def list_components() -> dict[str, list[str]]:
 # ============================================================================
 
 
-@router.get("/labeling/{component_name}")
-async def labeling_page(component_name: str, id: str) -> HTMLResponse:
-    """Serve a labeling HTML page with input data injected.
+@router.get("/labeling/{test_case_id}")
+async def labeling_page(
+    test_case_id: str,
+    authorization: str | None = Header(None),
+) -> HTMLResponse:
+    """Serve a labeling HTML page for a remote test case.
 
-    Reads the registered ``.html`` file, fetches the input object from
-    the local SQLite database, and replaces the
-    ``<script pixie-evals-labeling-input></script>`` placeholder with a
-    ``<script>`` block that sets ``const INPUT = { ... };``.
+    The *test_case_id* is a remote test case UUID.  The server:
+
+    1. Authenticates via the ``Authorization: Bearer <token>`` header.
+    2. Queries the remote pixie-server for the test case's test suite.
+    3. Resolves the test suite name to a local labeling HTML file.
+    4. Fetches the input data from local SQLite (via ``test_case_map``).
+    5. Injects the data into the HTML and returns it.
 
     Args:
-        component_name: The component slot name (filename stem).
-        id: The input object ID (data entry UUID or remote test case UUID).
+        test_case_id: Remote test case UUID.
+        authorization: ``Authorization: Bearer <token>`` header.
 
     Returns:
         The HTML page with the input data injected.
 
     Raises:
-        HTTPException: 404 if no component is registered or input not found.
+        HTTPException: 401 if no valid auth header.
+        HTTPException: 404 if test case, suite, labeling page, or data
+            not found.
     """
-    component = get_component(component_name)
+    # --- Auth ---
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization: Bearer <token> header required",
+        )
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization: Bearer <token> header required",
+        )
+
+    # --- Validate UUID ---
+    try:
+        tc_uuid = UUID(test_case_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid test case ID: '{test_case_id}'",
+        )
+
+    # --- Resolve test case → test suite → labeling page ---
+    client = RemoteClient(auth_token=token)
+
+    test_case = await client.get_test_case(tc_uuid)
+    if test_case is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Test case '{test_case_id}' not found on remote server",
+        )
+
+    suite_id = test_case.get("testSuite")
+    if not suite_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Test case '{test_case_id}' has no test suite",
+        )
+
+    suite = await client.get_test_suite(UUID(str(suite_id)))
+    if suite is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Test suite '{suite_id}' not found on remote server",
+        )
+
+    suite_name: str = suite.get("name", "")
+    slot = to_snake_case(suite_name) if suite_name else ""
+    component = get_component(slot) if slot else None
     if component is None:
         raise HTTPException(
             status_code=404,
             detail=(
-                f"No labeling page registered for '{component_name}'. "
+                f"No labeling page registered for test suite "
+                f"'{suite_name}' (slot: '{slot}'). "
                 f"Available: {list_slots()}"
             ),
         )
 
-    # Read the user's HTML file.
+    # --- Read HTML ---
     html = component.src_path.read_text(encoding="utf-8")
 
-    # Fetch the input object from the local database.
-    input_data = await _load_input(id)
+    # --- Load input data from local SQLite ---
+    input_data = await _load_input(test_case_id)
 
-    # Replace the placeholder <script pixie-evals-labeling-input>…</script>
-    # block with the actual data assignment.
+    # --- Inject data into HTML ---
     pattern = rf"<script\s+{re.escape(PLACEHOLDER_ATTR)}>[^<]*</script>"
     injection = (
         f"<script {PLACEHOLDER_ATTR}>\n"
