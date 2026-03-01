@@ -33,3 +33,15 @@ export const GET_DATA_ENTRIES = graphql(`
     }
   }
 `);
+
+export const GET_LABELING_HTML = graphql(`
+  query GetLabelingHtml($testCaseId: UUID!) {
+    getLabelingHtml(testCaseId: $testCaseId)
+  }
+`);
+
+export const LIST_LABELING_COMPONENTS = graphql(`
+  query ListLabelingComponents {
+    listLabelingComponents
+  }
+`);

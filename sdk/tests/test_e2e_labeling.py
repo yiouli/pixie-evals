@@ -282,38 +282,35 @@ class TestE2EInputEndpoint:
 
 
 class TestE2ELabelingPage:
-    """Test the /labeling/{test_case_id} page route."""
+    """Test the getLabelingHtml GraphQL query (full app integration)."""
 
     @pytest.mark.asyncio
-    async def test_registered_component_returns_html_with_input(self):
-        """A registered component returns HTML with input data injected."""
+    async def test_registered_component_returns_html_with_input(self, tmp_path: Path):
+        """getLabelingHtml returns HTML with input data injected."""
         from pixie_sdk.components.registry import (
             RegisteredComponent,
             clear,
             set_component,
         )
 
-        import tempfile
-
         clear()
 
         # Create a temp HTML file with the placeholder
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
-            f.write(
-                "<!DOCTYPE html><html><head></head><body>"
-                "<script pixie-evals-labeling-input>\n"
-                "window.INPUT=undefined;\n"
-                "</script>"
-                "<script>console.log(window.INPUT)</script>"
-                "</body></html>"
-            )
-            tmp_html = Path(f.name)
+        html_file = tmp_path / "my_comp.html"
+        html_file.write_text(
+            "<!DOCTYPE html><html><head></head><body>"
+            "<script pixie-evals-labeling-input>\n"
+            "window.INPUT=undefined;\n"
+            "</script>"
+            "<script>console.log(window.INPUT)</script>"
+            "</body></html>"
+        )
 
         set_component(
             "my_comp",
             RegisteredComponent(
                 slot="my_comp",
-                src_path=tmp_html,
+                src_path=html_file,
             ),
         )
 
@@ -327,43 +324,54 @@ class TestE2ELabelingPage:
             "data": entry_data,
         }
 
+        mock_conn = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_test_case = AsyncMock(
+            return_value={"id": test_case_id, "testSuite": test_suite_id}
+        )
+        mock_client.get_test_suite = AsyncMock(
+            return_value={"id": test_suite_id, "name": "My Comp"}
+        )
+
         with (
-            patch("pixie_sdk.components.server.db") as mock_db,
-            patch("pixie_sdk.components.server.RemoteClient") as MockClient,
+            patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
+            patch(
+                "pixie_sdk.db.get_local_entry_id",
+                new=AsyncMock(return_value=entry_id),
+            ),
+            patch(
+                "pixie_sdk.db.get_data_entry",
+                new=AsyncMock(return_value=mock_entry),
+            ),
+            patch(
+                "pixie_sdk.remote_client.RemoteClient",
+                return_value=mock_client,
+            ),
+            patch("pixie_sdk.components.scanner.rescan_components"),
         ):
-            mock_conn = AsyncMock()
-            mock_db.get_db = AsyncMock(return_value=mock_conn)
-            mock_db.get_local_entry_id = AsyncMock(return_value=entry_id)
-            mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
-            mock_conn.close = AsyncMock()
+            from pixie_sdk.server import app
 
-            mock_client = AsyncMock()
-            mock_client.get_test_case = AsyncMock(
-                return_value={"id": test_case_id, "testSuite": test_suite_id}
-            )
-            mock_client.get_test_suite = AsyncMock(
-                return_value={"id": test_suite_id, "name": "My Comp"}
-            )
-            MockClient.return_value = mock_client
-
-            from fastapi import FastAPI
-
-            from pixie_sdk.components.server import router
-
-            test_app = FastAPI()
-            test_app.include_router(router)
-
-            transport = ASGITransport(app=test_app)
+            transport = ASGITransport(app=app)
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                resp = await client.get(
-                    f"/labeling/{test_case_id}",
+                resp = await client.post(
+                    "/graphql",
+                    json={
+                        "query": """
+                            query GetLabelingHtml($testCaseId: UUID!) {
+                                getLabelingHtml(testCaseId: $testCaseId)
+                            }
+                        """,
+                        "variables": {"testCaseId": test_case_id},
+                    },
                     headers={"Authorization": "Bearer test-jwt"},
                 )
 
             assert resp.status_code == 200
-            html = resp.text
+            data = resp.json()
+            assert data.get("errors") is None, data.get("errors")
+            html = data["data"]["getLabelingHtml"]
             assert "<html" in html
             # Placeholder default should be replaced with actual data
             assert "window.INPUT=undefined" not in html
@@ -372,11 +380,10 @@ class TestE2ELabelingPage:
             assert '"bar"' in html
 
         clear()
-        tmp_html.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
-    async def test_unregistered_component_returns_404(self):
-        """Requesting a test case whose suite has no labeling page returns 404."""
+    async def test_unregistered_component_returns_error(self):
+        """Requesting a test case whose suite has no labeling page returns error."""
         from pixie_sdk.components.registry import clear
 
         clear()
@@ -384,30 +391,43 @@ class TestE2ELabelingPage:
         test_case_id = str(uuid4())
         test_suite_id = str(uuid4())
 
-        with patch("pixie_sdk.components.server.RemoteClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.get_test_case = AsyncMock(
-                return_value={"id": test_case_id, "testSuite": test_suite_id}
-            )
-            mock_client.get_test_suite = AsyncMock(
-                return_value={"id": test_suite_id, "name": "Nonexistent"}
-            )
-            MockClient.return_value = mock_client
+        mock_conn = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_test_case = AsyncMock(
+            return_value={"id": test_case_id, "testSuite": test_suite_id}
+        )
+        mock_client.get_test_suite = AsyncMock(
+            return_value={"id": test_suite_id, "name": "Nonexistent"}
+        )
 
-            from fastapi import FastAPI
+        with (
+            patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
+            patch(
+                "pixie_sdk.remote_client.RemoteClient",
+                return_value=mock_client,
+            ),
+            patch("pixie_sdk.components.scanner.rescan_components"),
+        ):
+            from pixie_sdk.server import app
 
-            from pixie_sdk.components.server import router
-
-            test_app = FastAPI()
-            test_app.include_router(router)
-
-            transport = ASGITransport(app=test_app)
+            transport = ASGITransport(app=app)
             async with AsyncClient(
                 transport=transport, base_url="http://test"
             ) as client:
-                resp = await client.get(
-                    f"/labeling/{test_case_id}",
+                resp = await client.post(
+                    "/graphql",
+                    json={
+                        "query": """
+                            query GetLabelingHtml($testCaseId: UUID!) {
+                                getLabelingHtml(testCaseId: $testCaseId)
+                            }
+                        """,
+                        "variables": {"testCaseId": test_case_id},
+                    },
                     headers={"Authorization": "Bearer test-jwt"},
                 )
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("errors")
+        assert "No labeling page" in data["errors"][0]["message"]

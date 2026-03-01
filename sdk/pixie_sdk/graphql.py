@@ -548,6 +548,123 @@ class Query:
             data_json = json.dumps(entry["data"], indent=2)
             return f"<html><body><pre>{data_json}</pre></body></html>"
 
+    @strawberry.field
+    async def get_labeling_html(
+        self,
+        info: Info,
+        test_case_id: UUID,
+    ) -> str:
+        """Serve a labeling HTML page for a remote test case.
+
+        Resolves the test case to its test suite, finds the matching
+        local ``.html`` labeling page, fetches the input data from
+        SQLite, injects it into the HTML, and returns the result.
+
+        The components directory is re-scanned on every call so that
+        files added or modified after server startup are picked up
+        immediately.
+
+        Args:
+            test_case_id: Remote test case UUID.
+
+        Returns:
+            The HTML string with input data injected.
+
+        Raises:
+            ValueError: If auth token is missing, or the test case,
+                suite, or labeling page is not found.
+        """
+        import re as _re
+
+        from pixie_sdk.components import PLACEHOLDER_ATTR
+        from pixie_sdk.components.registry import get_component, list_slots
+        from pixie_sdk.components.scaffold import to_snake_case
+        from pixie_sdk.components.scanner import rescan_components
+        from pixie_sdk.remote_client import RemoteClient
+
+        # --- Auth ---
+        auth_token = _get_auth_token_from_context(info.context)
+        if not auth_token:
+            raise ValueError("Authorization token required")
+
+        # --- Resolve test case → test suite → labeling page ---
+        client = RemoteClient(auth_token=auth_token)
+
+        test_case = await client.get_test_case(test_case_id)
+        if test_case is None:
+            raise ValueError(
+                f"Test case '{test_case_id}' not found on remote server"
+            )
+
+        suite_id = test_case.get("testSuite")
+        if not suite_id:
+            raise ValueError(
+                f"Test case '{test_case_id}' has no test suite"
+            )
+
+        suite = await client.get_test_suite(UUID(str(suite_id)))
+        if suite is None:
+            raise ValueError(
+                f"Test suite '{suite_id}' not found on remote server"
+            )
+
+        suite_name: str = suite.get("name", "")
+        slot = to_snake_case(suite_name) if suite_name else ""
+
+        # Re-scan components directory to pick up new/changed files
+        rescan_components()
+        component = get_component(slot) if slot else None
+
+        if component is None:
+            raise ValueError(
+                f"No labeling page registered for test suite "
+                f"'{suite_name}' (slot: '{slot}'). "
+                f"Available: {list_slots()}"
+            )
+
+        # --- Read HTML (always from disk for freshness) ---
+        html = component.src_path.read_text(encoding="utf-8")
+
+        # --- Load input data from local SQLite ---
+        conn = info.context["db"]
+        tc_id_str = str(test_case_id)
+        local_id = await db.get_local_entry_id(conn, tc_id_str)
+        lookup_id = UUID(local_id) if local_id else test_case_id
+
+        entry = await db.get_data_entry(conn, lookup_id)
+        if entry is None:
+            raise ValueError(f"Data entry for test case '{test_case_id}' not found")
+
+        input_data: dict = entry["data"]
+        input_data["id"] = entry["id"]
+
+        # --- Inject data into HTML ---
+        pattern = rf"<script\s+{_re.escape(PLACEHOLDER_ATTR)}>[^<]*</script>"
+        injection = (
+            f"<script {PLACEHOLDER_ATTR}>\n"
+            f"window.INPUT={json.dumps(input_data)};\n"
+            f"</script>"
+        )
+        html = _re.sub(pattern, lambda _: injection, html, flags=_re.DOTALL)
+
+        return html
+
+    @strawberry.field
+    async def list_labeling_components(self, info: Info) -> list[str]:
+        """List all registered labeling component slot names.
+
+        Re-scans the components directory to pick up any files
+        added or removed since the server started.
+
+        Returns:
+            Sorted list of slot name strings.
+        """
+        from pixie_sdk.components.registry import list_slots
+        from pixie_sdk.components.scanner import rescan_components
+
+        rescan_components()
+        return list_slots()
+
 
 # ============================================================================
 # Mutations

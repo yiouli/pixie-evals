@@ -25,10 +25,16 @@ Access the interactive playground at http://localhost:8100/graphql
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/graphql` | Strawberry GraphQL endpoint (queries, mutations, subscriptions) |
-| `GET` | `/labeling/{test_case_id}` | Serve custom labeling HTML page (requires `Authorization: Bearer` header) |
 | `GET` | `/api/inputs/{id}` | Load a raw input object from SQLite by entry/test-case UUID |
-| `GET` | `/api/components` | List all registered labeling page slot names |
+| `GET` | `/api/components` | List all registered labeling page slot names (re-scans on every call) |
 | `GET` | `/health` | Health check |
+
+### Key GraphQL Queries for Labeling
+
+| Query | Description |
+|-------|-------------|
+| `getLabelingHtml(testCaseId: UUID!)` | Returns injected HTML for a labeling page (replaces the old REST `/labeling/` endpoint) |
+| `listLabelingComponents` | Lists all registered labeling component slot names |
 
 ---
 
@@ -39,10 +45,13 @@ The SDK lets you build a fully custom labeling page per test suite using plain H
 ### How it works
 
 1. You place `.html` files in a `labeling/` folder next to where you run the server.
-2. At startup the server discovers and registers every `.html` file in that folder.
-3. When a labeling page is requested the server reads your HTML, fetches the input
-   object from SQLite, and **replaces** the placeholder script block with the actual data.
-4. The injected page is served inside the frontend's iframe.
+2. The server discovers and registers every `.html` file in that folder. The
+   directory is **re-scanned on every request** so files added or modified after
+   startup are picked up immediately.
+3. When a labeling page is requested via the `getLabelingHtml` GraphQL query,
+   the server reads your HTML, fetches the input object from SQLite, and
+   **replaces** the placeholder script block with the actual data.
+4. The injected HTML string is returned to the frontend and rendered via iframe `srcdoc`.
 
 ### Data injection
 
@@ -129,18 +138,21 @@ from pixie_sdk.components import set_components_dir
 set_components_dir("./my_labeling_pages")
 ```
 
-### URL routing
+### GraphQL query
 
-The labeling page is accessed via the **remote test case UUID**:
+The labeling page is fetched via the `getLabelingHtml` GraphQL query with the
+**remote test case UUID**:
 
+```graphql
+query GetLabelingHtml($testCaseId: UUID!) {
+  getLabelingHtml(testCaseId: $testCaseId)
+}
 ```
-GET /labeling/{test_case_id}
-Authorization: Bearer <jwt_token>
-```
 
-The server resolves everything from the test case ID:
+The query requires a `Bearer` token in the `Authorization` header. Internally it:
 1. Authenticates with the JWT token
 2. Fetches the test case from the remote pixie-server to get the test suite
-3. Converts the test suite name to snake_case to find the HTML file
-4. Fetches the input data from local SQLite via `test_case_map`
-5. Injects the data and serves the HTML
+3. Re-scans the components directory (picks up new/changed `.html` files)
+4. Converts the test suite name to snake_case to find the HTML file
+5. Fetches the input data from local SQLite via `test_case_map`
+6. Injects the data and returns the HTML string

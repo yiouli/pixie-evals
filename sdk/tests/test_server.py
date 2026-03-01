@@ -67,13 +67,16 @@ class TestGraphQLEndpoint:
 class TestComponentRoutes:
     """Test the labeling component HTTP routes."""
 
-    def test_list_components_empty(self, client):
+    @patch("pixie_sdk.components.server.rescan_components")
+    def test_list_components_empty(self, mock_rescan, client):
         """GET /api/components returns empty list when nothing registered."""
         response = client.get("/api/components")
         assert response.status_code == 200
         assert response.json() == {"slots": []}
+        mock_rescan.assert_called_once()
 
-    def test_list_components_with_entries(self, client, tmp_path):
+    @patch("pixie_sdk.components.server.rescan_components")
+    def test_list_components_with_entries(self, mock_rescan, client, tmp_path):
         """GET /api/components returns registered slot names."""
         html_file = tmp_path / "demo.html"
         html_file.write_text("<html></html>")
@@ -85,72 +88,6 @@ class TestComponentRoutes:
         response = client.get("/api/components")
         assert response.status_code == 200
         assert response.json() == {"slots": ["demo"]}
-
-    def test_labeling_page_requires_auth(self, client):
-        """GET /labeling/{id} without Authorization header returns 401."""
-        response = client.get(f"/labeling/{uuid4()}")
-        assert response.status_code == 401
-
-    def test_labeling_page_returns_html_with_input(self, client, tmp_path):
-        """GET /labeling/{test_case_id} resolves and returns injected HTML."""
-        test_case_id = str(uuid4())
-        test_suite_id = str(uuid4())
-        local_entry_id = str(uuid4())
-
-        # Register a labeling page under the slot "demo"
-        html_file = tmp_path / "demo.html"
-        html_file.write_text(
-            "<!DOCTYPE html><html><head></head><body>"
-            "<script pixie-evals-labeling-input>\n"
-            "window.INPUT=undefined;\n"
-            "</script>"
-            "<script>console.log(window.INPUT)</script>"
-            "</body></html>"
-        )
-        set_component(
-            "demo",
-            RegisteredComponent(slot="demo", src_path=html_file),
-        )
-
-        entry_data = {"prompt": "hello", "response": "world"}
-        mock_entry = {
-            "id": local_entry_id,
-            "dataset_id": str(uuid4()),
-            "data": entry_data,
-        }
-
-        with (
-            patch("pixie_sdk.components.server.db") as mock_db,
-            patch("pixie_sdk.components.server.RemoteClient") as MockClient,
-        ):
-            mock_conn = AsyncMock()
-            mock_db.get_db = AsyncMock(return_value=mock_conn)
-            mock_db.get_local_entry_id = AsyncMock(return_value=local_entry_id)
-            mock_db.get_data_entry = AsyncMock(return_value=mock_entry)
-            mock_conn.close = AsyncMock()
-
-            mock_client = AsyncMock()
-            mock_client.get_test_case = AsyncMock(
-                return_value={"id": test_case_id, "testSuite": test_suite_id}
-            )
-            mock_client.get_test_suite = AsyncMock(
-                return_value={"id": test_suite_id, "name": "Demo"}
-            )
-            MockClient.return_value = mock_client
-
-            response = client.get(
-                f"/labeling/{test_case_id}",
-                headers={"Authorization": "Bearer my-jwt-token"},
-            )
-            assert response.status_code == 200
-            assert "text/html" in response.headers["content-type"]
-            assert "window.INPUT=undefined" not in response.text
-            assert "window.INPUT=" in response.text
-            assert '"prompt"' in response.text
-            assert '"hello"' in response.text
-
-            # Verify auth token forwarded to RemoteClient
-            MockClient.assert_called_once_with(auth_token="my-jwt-token")
 
     def test_input_returns_data_entry(self, client):
         """GET /api/inputs/{id} returns the data entry from the DB."""
@@ -214,43 +151,175 @@ class TestComponentRoutes:
             response = client.get(f"/api/inputs/{entry_id}")
             assert response.status_code == 404
 
-    def test_labeling_page_test_case_not_found(self, client):
-        """GET /labeling/{uuid} returns 404 when test case not on remote."""
+
+# ============================================================================
+# TestGetLabelingHtmlQuery — GraphQL query for labeling pages
+# ============================================================================
+
+
+class TestGetLabelingHtmlQuery:
+    """Test the getLabelingHtml GraphQL query."""
+
+    def test_returns_html_with_injected_input(self, client, tmp_path):
+        """getLabelingHtml returns HTML with input data injected."""
         test_case_id = str(uuid4())
+        test_suite_id = str(uuid4())
+        local_entry_id = str(uuid4())
 
-        with patch("pixie_sdk.components.server.RemoteClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.get_test_case = AsyncMock(return_value=None)
-            MockClient.return_value = mock_client
+        # Register a labeling page under the slot "demo"
+        html_file = tmp_path / "demo.html"
+        html_file.write_text(
+            "<!DOCTYPE html><html><head></head><body>"
+            "<script pixie-evals-labeling-input>\n"
+            "window.INPUT=undefined;\n"
+            "</script>"
+            "<script>console.log(window.INPUT)</script>"
+            "</body></html>"
+        )
+        set_component(
+            "demo",
+            RegisteredComponent(slot="demo", src_path=html_file),
+        )
 
-            response = client.get(
-                f"/labeling/{test_case_id}",
+        entry_data = {"prompt": "hello", "response": "world"}
+        mock_entry = {
+            "id": local_entry_id,
+            "dataset_id": str(uuid4()),
+            "data": entry_data,
+        }
+
+        mock_conn = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_test_case = AsyncMock(
+            return_value={"id": test_case_id, "testSuite": test_suite_id}
+        )
+        mock_client.get_test_suite = AsyncMock(
+            return_value={"id": test_suite_id, "name": "Demo"}
+        )
+
+        with (
+            patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
+            patch(
+                "pixie_sdk.db.get_local_entry_id",
+                new=AsyncMock(return_value=local_entry_id),
+            ),
+            patch(
+                "pixie_sdk.db.get_data_entry", new=AsyncMock(return_value=mock_entry)
+            ),
+            patch(
+                "pixie_sdk.remote_client.RemoteClient", return_value=mock_client
+            ) as MockClient,
+            patch("pixie_sdk.components.scanner.rescan_components"),
+        ):
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """
+                        query GetLabelingHtml($testCaseId: UUID!) {
+                            getLabelingHtml(testCaseId: $testCaseId)
+                        }
+                    """,
+                    "variables": {"testCaseId": test_case_id},
+                },
                 headers={"Authorization": "Bearer my-jwt-token"},
             )
-            assert response.status_code == 404
-            assert "not found on remote" in response.json()["detail"]
+            assert response.status_code == 200
+            data = response.json()
+            html = data["data"]["getLabelingHtml"]
+            assert "window.INPUT=undefined" not in html
+            assert "window.INPUT=" in html
+            assert '"prompt"' in html
+            assert '"hello"' in html
 
-    def test_labeling_page_no_html_for_suite(self, client):
-        """GET /labeling/{uuid} returns 404 when no labeling page exists."""
+            # Verify auth token forwarded to RemoteClient
+            MockClient.assert_called_once_with(auth_token="my-jwt-token")
+
+    def test_no_auth_returns_error(self, client):
+        """getLabelingHtml without auth token returns an error."""
+        test_case_id = str(uuid4())
+
+        mock_conn = AsyncMock()
+        with patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)):
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """
+                        query GetLabelingHtml($testCaseId: UUID!) {
+                            getLabelingHtml(testCaseId: $testCaseId)
+                        }
+                    """,
+                    "variables": {"testCaseId": test_case_id},
+                },
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data.get("errors")
+            assert "Authorization token required" in data["errors"][0]["message"]
+
+    def test_test_case_not_found_returns_error(self, client):
+        """getLabelingHtml returns error when test case not on remote."""
+        test_case_id = str(uuid4())
+
+        mock_conn = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_test_case = AsyncMock(return_value=None)
+
+        with (
+            patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
+            patch("pixie_sdk.remote_client.RemoteClient", return_value=mock_client),
+        ):
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """
+                        query GetLabelingHtml($testCaseId: UUID!) {
+                            getLabelingHtml(testCaseId: $testCaseId)
+                        }
+                    """,
+                    "variables": {"testCaseId": test_case_id},
+                },
+                headers={"Authorization": "Bearer my-jwt-token"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data.get("errors")
+            assert "not found on remote" in data["errors"][0]["message"]
+
+    def test_no_labeling_page_returns_error(self, client):
+        """getLabelingHtml returns error when no labeling page for suite."""
         test_case_id = str(uuid4())
         test_suite_id = str(uuid4())
 
-        with patch("pixie_sdk.components.server.RemoteClient") as MockClient:
-            mock_client = AsyncMock()
-            mock_client.get_test_case = AsyncMock(
-                return_value={"id": test_case_id, "testSuite": test_suite_id}
-            )
-            mock_client.get_test_suite = AsyncMock(
-                return_value={"id": test_suite_id, "name": "Unknown Suite"}
-            )
-            MockClient.return_value = mock_client
+        mock_conn = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_test_case = AsyncMock(
+            return_value={"id": test_case_id, "testSuite": test_suite_id}
+        )
+        mock_client.get_test_suite = AsyncMock(
+            return_value={"id": test_suite_id, "name": "Unknown Suite"}
+        )
 
-            response = client.get(
-                f"/labeling/{test_case_id}",
+        with (
+            patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
+            patch("pixie_sdk.remote_client.RemoteClient", return_value=mock_client),
+            patch("pixie_sdk.components.scanner.rescan_components"),
+        ):
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """
+                        query GetLabelingHtml($testCaseId: UUID!) {
+                            getLabelingHtml(testCaseId: $testCaseId)
+                        }
+                    """,
+                    "variables": {"testCaseId": test_case_id},
+                },
                 headers={"Authorization": "Bearer my-jwt-token"},
             )
-            assert response.status_code == 404
-            assert "No labeling page" in response.json()["detail"]
+            assert response.status_code == 200
+            data = response.json()
+            assert data.get("errors")
+            assert "No labeling page" in data["errors"][0]["message"]
 
 
 # ============================================================================

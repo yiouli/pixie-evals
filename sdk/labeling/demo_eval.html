@@ -16,6 +16,7 @@
     const container = document.getElementById('app-container');
     const preElement = document.createElement('pre')
     preElement.textContent = JSON.stringify(window.INPUT, undefined, 2);
+    container.appendChild(preElement);
   </script>
 </body>
 </html>

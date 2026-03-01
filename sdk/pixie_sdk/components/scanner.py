@@ -1,7 +1,7 @@
 """Walk the components folder and register each ``.html`` file.
 
-Called once inside ``serve()`` before the server accepts connections.
-Not called at import time — nothing happens until the user starts the server.
+Called during ``serve()`` startup and refreshed on demand to pick up
+new or changed files without restarting the server.
 
 See Also:
     ``registry`` — stores the resulting ``RegisteredComponent`` entries.
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pixie_sdk.components.registry import RegisteredComponent, set_component
+from pixie_sdk.components.registry import RegisteredComponent, clear, set_component
 
 
 def scan_and_register(components_dir: Path) -> list[str]:
@@ -55,3 +55,23 @@ def scan_and_register(components_dir: Path) -> list[str]:
 
     print(f"[pixie-sdk] {len(registered)} labeling page(s) ready.")
     return registered
+
+
+def rescan_components() -> list[str]:
+    """Re-scan the configured components directory.
+
+    Clears the existing registry and re-discovers all ``.html`` files.
+    Called automatically before serving a labeling page so that files
+    added or removed after server startup are picked up immediately.
+
+    Returns:
+        Sorted list of slot names that were successfully registered.
+    """
+    from pixie_sdk.components import get_components_dir
+
+    components_dir = get_components_dir()
+    resolved = (
+        components_dir if components_dir.is_absolute() else Path.cwd() / components_dir
+    )
+    clear()
+    return scan_and_register(resolved)

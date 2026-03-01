@@ -12,15 +12,30 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
   return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
 }
 
-// Mock the auth store to provide a token
-vi.mock("../lib/store", () => ({
-  useAuthStore: (selector: (state: { token: string | null }) => unknown) =>
-    selector({ token: "mock-jwt-token" }),
+// Mock useLazyQuery from Apollo Client
+const mockFetchLabelingHtml = vi.fn();
+let mockQueryResult: {
+  loading: boolean;
+  data: { getLabelingHtml: string } | undefined;
+  error: { message: string } | undefined;
+} = { loading: false, data: undefined, error: undefined };
+
+vi.mock("@apollo/client", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    useLazyQuery: () => [mockFetchLabelingHtml, mockQueryResult],
+  };
+});
+
+// Mock the SDK client
+vi.mock("../lib/apolloClient", () => ({
+  sdkClient: {},
 }));
 
-// Mock the env module
-vi.mock("../lib/env", () => ({
-  SDK_BASE_URL: "http://localhost:8100",
+// Mock the query import
+vi.mock("../graphql/sdk/query", () => ({
+  GET_LABELING_HTML: {},
 }));
 
 const SAMPLE_METRICS = [
@@ -28,21 +43,11 @@ const SAMPLE_METRICS = [
   { id: "m2", name: "Relevance" },
 ];
 
-// Helper to set up global fetch mock
-function mockFetch(response: { ok: boolean; text?: string; json?: object }) {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: response.ok,
-    text: () => Promise.resolve(response.text ?? ""),
-    json: () => Promise.resolve(response.json ?? {}),
-    statusText: "Not Found",
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
-
 describe("ManualLabelingDialog", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockFetchLabelingHtml.mockReset();
+    mockQueryResult = { loading: false, data: undefined, error: undefined };
   });
 
   it("should render the dialog when open", () => {
@@ -74,12 +79,7 @@ describe("ManualLabelingDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("should fetch labeling HTML with Authorization header", async () => {
-    const fetchMock = mockFetch({
-      ok: true,
-      text: "<html><body>Labeling UI</body></html>",
-    });
-
+  it("should call GraphQL query with testCaseId", async () => {
     render(
       <TestWrapper>
         <ManualLabelingDialog
@@ -91,18 +91,18 @@ describe("ManualLabelingDialog", () => {
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "http://localhost:8100/labeling/test-case-123",
-        { headers: { Authorization: "Bearer mock-jwt-token" } },
-      );
+      expect(mockFetchLabelingHtml).toHaveBeenCalledWith({
+        variables: { testCaseId: "test-case-123" },
+      });
     });
   });
 
-  it("should render iframe with srcdoc after successful fetch", async () => {
-    mockFetch({
-      ok: true,
-      text: "<html><body>Labeling Content</body></html>",
-    });
+  it("should render iframe with srcdoc after successful query", async () => {
+    mockQueryResult = {
+      loading: false,
+      data: { getLabelingHtml: "<html><body>Labeling Content</body></html>" },
+      error: undefined,
+    };
 
     render(
       <TestWrapper>
@@ -121,11 +121,12 @@ describe("ManualLabelingDialog", () => {
     });
   });
 
-  it("should show error when fetch fails", async () => {
-    mockFetch({
-      ok: false,
-      json: { detail: "Test case not found" },
-    });
+  it("should show error when query fails", async () => {
+    mockQueryResult = {
+      loading: false,
+      data: undefined,
+      error: { message: "Test case not found" },
+    };
 
     render(
       <TestWrapper>

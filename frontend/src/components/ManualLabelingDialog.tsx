@@ -16,8 +16,9 @@ import {
 } from "@mui/material";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
-import { SDK_BASE_URL } from "../lib/env";
-import { useAuthStore } from "../lib/store";
+import { useLazyQuery } from "@apollo/client";
+import { GET_LABELING_HTML } from "../graphql/sdk/query";
+import { sdkClient } from "../lib/apolloClient";
 
 interface ManualLabelingDialogProps {
   open: boolean;
@@ -35,10 +36,10 @@ interface ManualLabelingDialogProps {
 /**
  * Manual labeling dialog.
  *
- * Fetches the labeling HTML from the SDK server using the standard
- * Authorization header and renders it via iframe srcdoc. Below the
- * iframe, displays one rating slider per metric, an optional notes
- * field, and Save/Skip buttons.
+ * Fetches the labeling HTML from the SDK server via the
+ * ``getLabelingHtml`` GraphQL query and renders it via iframe srcdoc.
+ * Below the iframe, displays one rating slider per metric, an optional
+ * notes field, and Save/Skip buttons.
  */
 export function ManualLabelingDialog({
   open,
@@ -48,46 +49,23 @@ export function ManualLabelingDialog({
   onSave,
   onSkip,
 }: ManualLabelingDialogProps) {
-  const token = useAuthStore((state) => state.token);
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [notes, setNotes] = useState("");
 
-  // Fetch labeling HTML from SDK server with Authorization header
-  const [htmlContent, setHtmlContent] = useState<string | null>(null);
-  const [fetchLoading, setFetchLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  // Fetch labeling HTML via GraphQL query
+  const [fetchLabelingHtml, { loading: fetchLoading, data: fetchData, error: fetchQueryError }] =
+    useLazyQuery(GET_LABELING_HTML, { client: sdkClient, fetchPolicy: "no-cache" });
+
+  const htmlContent = fetchData?.getLabelingHtml ?? null;
+  const fetchError = fetchQueryError?.message ?? null;
 
   useEffect(() => {
     if (!testCaseId || !open) {
-      setHtmlContent(null);
-      setFetchError(null);
       return;
     }
 
-    setFetchLoading(true);
-    setFetchError(null);
-
-    fetch(`${SDK_BASE_URL}/labeling/${testCaseId}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res
-            .json()
-            .catch(() => ({ detail: res.statusText }));
-          throw new Error(body.detail || res.statusText);
-        }
-        return res.text();
-      })
-      .then((html) => {
-        setHtmlContent(html);
-        setFetchLoading(false);
-      })
-      .catch((err: Error) => {
-        setFetchError(err.message);
-        setFetchLoading(false);
-      });
-  }, [testCaseId, token, open]);
+    fetchLabelingHtml({ variables: { testCaseId } });
+  }, [testCaseId, open, fetchLabelingHtml]);
 
   const handleRatingChange = (metricId: string, value: number) => {
     setRatings((prev) => ({ ...prev, [metricId]: value }));
