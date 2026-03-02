@@ -197,7 +197,6 @@ cython_debug/
 # Frontend
 frontend/node_modules/
 frontend/dist/
-frontend/src/generated/
 
 # SDK generated client
 sdk/pixie_sdk/remote_client/generated/
