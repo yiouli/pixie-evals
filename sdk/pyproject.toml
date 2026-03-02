@@ -62,11 +62,20 @@ warn_unused_configs = true
 target-version = "py311"
 
 [tool.ariadne-codegen]
-remote_schema_url = "http://localhost:8000/graphql"
-remote_schema_path = "remote_client/schema.graphql"
+schema_path = "remote_client/schema.graphql"
 queries_path = "remote_client/queries.graphql"
-target_package_path = "pixie_sdk/remote_client/generated"
+target_package_path = "pixie_sdk/remote_client"
 target_package_name = "generated"
-client_name = "RemoteClient"
+client_name = "PixieServerClient"
+async_client = true
 include_all_inputs = true
 include_all_enums = true
+
+[tool.ariadne-codegen.scalars.UUID]
+type = "str"
+
+[tool.ariadne-codegen.scalars.JSON]
+type = "typing.Any"
+
+[tool.ariadne-codegen.scalars.DateTime]
+type = "str"

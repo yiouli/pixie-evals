@@ -1,18 +1,38 @@
-"""Stub remote client for calling the pixie-server.
+"""Remote client for calling the pixie-server GraphQL API.
 
-This will be replaced by ariadne-codegen generated code.
-For now, we provide minimal stubs for development.
+This module provides :class:`RemoteClient`, a thin convenience wrapper
+around the ariadne-codegen-generated :class:`PixieServerClient`.  It adds
+a familiar ``(endpoint, auth_token=)`` constructor that the rest of the SDK
+code-base already uses and exposes high-level helper methods that return
+plain dicts for backward compatibility with existing callers.
+
+The generated types (Pydantic models, input classes) are re-exported from
+``pixie_sdk.remote_client.generated`` so callers can gradually migrate to
+the fully-typed interface.
+
+To regenerate the underlying client after changing the pixie-server schema::
+
+    # 1. Fetch the latest schema (requires a running pixie-server)
+    npx get-graphql-schema http://localhost:8000/graphql > sdk/remote_client/schema.graphql
+
+    # 2. Run ariadne-codegen
+    cd sdk && uv run ariadne-codegen
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
 from uuid import UUID
 
-import httpx
+from pixie_sdk.remote_client.generated import (  # noqa: F401 – re-export
+    LabelDetailsInput,
+    MetricLabelInputGql,
+    PixieServerClient,
+    TestCaseWithLabelInput,
+    TestSuiteConfigInput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,80 +42,45 @@ def _get_remote_endpoint() -> str:
     return os.environ.get("PIXIE_SERVER_URL", "http://localhost:8000/graphql")
 
 
-def _get_auth_token() -> str | None:
-    """Get the auth token from env."""
-    return os.environ.get("PIXIE_AUTH_TOKEN")
-
-
 class RemoteClient:
-    """Client for pixie-server GraphQL API."""
+    """High-level async client for the remote pixie-server.
+
+    Wraps the ariadne-codegen-generated :class:`PixieServerClient` with a
+    convenience constructor and dict-returning helper methods so existing
+    callers continue to work without changes.
+
+    New code should prefer using the generated client directly::
+
+        from pixie_sdk.remote_client.generated import PixieServerClient
+
+    Args:
+        endpoint: GraphQL endpoint URL.  Falls back to ``PIXIE_SERVER_URL``
+            env var, then ``http://localhost:8000/graphql``.
+        auth_token: JWT bearer token attached to every request.
+    """
 
     def __init__(
         self,
         endpoint: str | None = None,
+        *,
         auth_token: str | None = None,
     ) -> None:
-        """Initialise the remote client.
-
-        Args:
-            endpoint: GraphQL endpoint URL. Defaults to PIXIE_SERVER_URL env var.
-            auth_token: JWT bearer token to attach to every request. When
-                provided this takes precedence over the PIXIE_AUTH_TOKEN env
-                var, allowing the SDK server to forward the token it received
-                from the frontend rather than relying on a static env value.
-        """
         self.endpoint = endpoint or _get_remote_endpoint()
-        # Explicit token wins; fall back to env var so existing usage still works.
-        self._auth_token = auth_token if auth_token is not None else _get_auth_token()
-        self._client = httpx.AsyncClient(timeout=60.0)
+        self._auth_token = auth_token or os.environ.get("PIXIE_AUTH_TOKEN")
+        headers: dict[str, str] = {}
+        if self._auth_token:
+            headers["Authorization"] = f"Bearer {self._auth_token}"
+        self._client = PixieServerClient(url=self.endpoint, headers=headers)
 
-    async def _execute(
-        self,
-        query: str,
-        variables: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Execute a GraphQL query/mutation against the remote server.
-
-        Args:
-            query: The GraphQL query string.
-            variables: Optional variables dict.
-
-        Returns:
-            The 'data' field of the GraphQL response.
-
-        Raises:
-            RuntimeError: If the response contains errors.
-        """
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        token = self._auth_token
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        payload: dict[str, Any] = {"query": query}
-        if variables:
-            payload["variables"] = variables
-
-        resp = await self._client.post(
-            self.endpoint,
-            json=payload,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        body = resp.json()
-
-        if "errors" in body and body["errors"]:
-            error_msgs = "; ".join(e.get("message", str(e)) for e in body["errors"])
-            raise RuntimeError(f"GraphQL errors: {error_msgs}")
-
-        return body.get("data", {})
+    # ------------------------------------------------------------------
+    # Query helpers (dict returns for backward compat)
+    # ------------------------------------------------------------------
 
     async def get_test_case(
         self,
         test_case_id: UUID,
     ) -> dict[str, Any] | None:
         """Fetch a single test case by ID from the remote server.
-
-        Uses ``getTestCasesWithLabel`` with a single-item list.
 
         Args:
             test_case_id: UUID of the test case.
@@ -104,22 +89,18 @@ class RemoteClient:
             Dict with ``id``, ``testSuite``, ``description``, ``createdAt``,
             or ``None`` if not found.
         """
-        query = """
-        query GetTestCasesWithLabel($ids: [UUID!]!) {
-            getTestCasesWithLabel(ids: $ids) {
-                testCase {
-                    id
-                    testSuite
-                    description
-                    createdAt
-                }
+        result = await self._client.get_test_cases_with_label(
+            ids=[str(test_case_id)],
+        )
+        items = result.get_test_cases_with_label
+        if items:
+            tc = items[0].test_case
+            return {
+                "id": tc.id,
+                "testSuite": tc.test_suite,
+                "description": tc.description,
+                "createdAt": tc.created_at,
             }
-        }
-        """
-        data = await self._execute(query, {"ids": [str(test_case_id)]})
-        results: list[dict[str, Any]] = data.get("getTestCasesWithLabel", [])
-        if results:
-            return dict(results[0]["testCase"])
         return None
 
     async def get_test_suite(
@@ -128,32 +109,23 @@ class RemoteClient:
     ) -> dict[str, Any] | None:
         """Fetch a single test suite by ID from the remote server.
 
-        Queries ``listTestSuites`` and filters client-side because the remote
-        server does not expose a single-item lookup.
-
         Args:
             test_suite_id: UUID of the test suite.
 
         Returns:
-            Dict with ``id``, ``name``, ``description``, ``config`` (including
-            ``input_schema``), or ``None`` if not found.
+            Dict with ``id``, ``name``, ``description``, ``config``,
+            or ``None`` if not found.
         """
-        query = """
-        query ListTestSuites {
-            listTestSuites {
-                id
-                name
-                description
-                config
-            }
-        }
-        """
-        data = await self._execute(query)
-        suites: list[dict[str, Any]] = data.get("listTestSuites", [])
+        result = await self._client.list_test_suites()
         target = str(test_suite_id)
-        for suite in suites:
-            if suite.get("id") == target:
-                return dict(suite)
+        for suite in result.list_test_suites:
+            if suite.id == target:
+                return {
+                    "id": suite.id,
+                    "name": suite.name,
+                    "description": suite.description,
+                    "config": suite.config,
+                }
         return None
 
     async def create_test_suite(
@@ -174,21 +146,14 @@ class RemoteClient:
         Returns:
             UUID of the created test suite.
         """
-        query = """
-        mutation CreateTestSuite($name: String!, $metricIds: [UUID!]!, $config: TestSuiteConfigInput!, $description: String) {
-            createTestSuite(name: $name, metricIds: $metricIds, config: $config, description: $description)
-        }
-        """
-        data = await self._execute(
-            query,
-            variables={
-                "name": name,
-                "description": description,
-                "metricIds": [str(mid) for mid in metric_ids],
-                "config": {"inputSchema": input_schema},
-            },
+        config = TestSuiteConfigInput(inputSchema=input_schema)
+        result = await self._client.create_test_suite(
+            name=name,
+            metric_ids=[str(mid) for mid in metric_ids],
+            config=config,
+            description=description,
         )
-        return UUID(data["createTestSuite"])
+        return UUID(result.create_test_suite)
 
     async def add_test_cases(
         self,
@@ -199,31 +164,24 @@ class RemoteClient:
 
         Args:
             test_suite_id: UUID of the test suite.
-            test_cases: List of test case dicts with input, embedding, etc.
+            test_cases: List of test case dicts with ``embedding``,
+                optional ``description``.
 
         Returns:
-            List of remote test case UUID strings created by the server.
-        """
-        query = """
-        mutation AddTestCases($testSuiteId: UUID!, $testCases: [TestCaseWithLabelInput!]!) {
-            addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)
-        }
+            List of remote test case UUID strings.
         """
         tc_inputs = [
-            {
-                "embedding": tc["embedding"],
-                "description": tc.get("description"),
-            }
+            TestCaseWithLabelInput(
+                embedding=tc["embedding"],
+                description=tc.get("description"),
+            )
             for tc in test_cases
         ]
-        data = await self._execute(
-            query,
-            variables={
-                "testSuiteId": str(test_suite_id),
-                "testCases": tc_inputs,
-            },
+        result = await self._client.add_test_cases(
+            test_suite_id=str(test_suite_id),
+            test_cases=tc_inputs,
         )
-        return data.get("addTestCases", [])
+        return result.add_test_cases
 
     async def get_evaluator_with_signature(
         self,
@@ -235,29 +193,19 @@ class RemoteClient:
             test_suite_id: UUID of the test suite.
 
         Returns:
-            Dict with input_schema, output_schema, saved_program, or None.
+            Dict with ``input_schema``, ``output_schema``, ``saved_program``,
+            or ``None``.
         """
-        query = """
-        query GetEvaluatorWithSignature($testSuiteId: UUID!) {
-            getEvaluatorWithSignature(testSuiteId: $testSuiteId) {
-                inputSchema
-                outputSchema
-                savedProgram
-            }
-        }
-        """
-        data = await self._execute(
-            query,
-            variables={"testSuiteId": str(test_suite_id)},
+        result = await self._client.get_evaluator_with_signature(
+            test_suite_id=str(test_suite_id),
         )
-        result = data.get("getEvaluatorWithSignature")
-        if not result:
+        sig = result.get_evaluator_with_signature
+        if not sig:
             return None
-
         return {
-            "input_schema": result["inputSchema"],
-            "output_schema": result["outputSchema"],
-            "saved_program": result.get("savedProgram"),
+            "input_schema": sig.input_schema,
+            "output_schema": sig.output_schema,
+            "saved_program": sig.saved_program,
         }
 
     async def label_test_cases(
@@ -269,39 +217,33 @@ class RemoteClient:
 
         Args:
             test_suite_id: UUID of the test suite.
-            labels: List of label dicts with test_case_id, labels (metric_id, value), notes, metadata.
+            labels: List of label dicts with ``test_case_id``, ``labels``
+                (each with ``metric_id``, ``value``), optional ``notes``,
+                ``metadata``.
 
         Returns:
             List of created label IDs.
         """
-        query = """
-        mutation LabelTestCases($testSuiteId: UUID!, $labels: [LabelDetailsInput!]!) {
-            labelTestCases(testSuiteId: $testSuiteId, labels: $labels)
-        }
-        """
         gql_labels = [
-            {
-                "testCaseId": str(lbl["test_case_id"]),
-                "labels": [
-                    {
-                        "metricId": str(ml["metric_id"]),
-                        "value": ml["value"],
-                    }
+            LabelDetailsInput(
+                testCaseId=str(lbl["test_case_id"]),
+                labels=[
+                    MetricLabelInputGql(
+                        metricId=str(ml["metric_id"]),
+                        value=ml["value"],
+                    )
                     for ml in lbl["labels"]
                 ],
-                "notes": lbl.get("notes"),
-                "metadata": lbl.get("metadata"),
-            }
+                notes=lbl.get("notes"),
+                metadata=lbl.get("metadata"),
+            )
             for lbl in labels
         ]
-        data = await self._execute(
-            query,
-            variables={
-                "testSuiteId": str(test_suite_id),
-                "labels": gql_labels,
-            },
+        result = await self._client.label_test_cases(
+            test_suite_id=str(test_suite_id),
+            labels=gql_labels,
         )
-        return data.get("labelTestCases", [])
+        return result.label_test_cases
 
     async def get_manual_labels_after_cutoff(
         self,
@@ -313,66 +255,59 @@ class RemoteClient:
             test_suite_id: UUID of the test suite.
 
         Returns:
-            List of dicts with 'test_case' and 'label' keys.
+            List of dicts with ``testCase`` and ``label`` keys.
         """
-        query = """
-        query GetManualLabelsAfterCutoff($testSuiteId: UUID!) {
-            getManualLabelsAfterCutoff(testSuiteId: $testSuiteId) {
-                testCase {
-                    id
-                    description
-                    testSuite
-                    createdAt
-                }
-                label {
-                    id
-                    metric
-                    testCase
-                    value
-                    labeledAt
-                    labeler
-                    notes
-                    metadata
-                }
-            }
-        }
-        """
-        data = await self._execute(
-            query,
-            variables={"testSuiteId": str(test_suite_id)},
+        result = await self._client.get_manual_labels_after_cutoff(
+            test_suite_id=str(test_suite_id),
         )
-        return data.get("getManualLabelsAfterCutoff", [])
+        items: list[dict[str, Any]] = []
+        for entry in result.get_manual_labels_after_cutoff:
+            tc = entry.test_case
+            item: dict[str, Any] = {
+                "testCase": {
+                    "id": tc.id,
+                    "description": tc.description,
+                    "testSuite": tc.test_suite,
+                    "createdAt": tc.created_at,
+                },
+            }
+            if entry.label:
+                lbl = entry.label
+                item["label"] = {
+                    "id": lbl.id,
+                    "metric": lbl.metric,
+                    "testCase": lbl.test_case,
+                    "value": lbl.value,
+                    "labeledAt": lbl.labeled_at,
+                    "labeler": lbl.labeler,
+                    "notes": lbl.notes,
+                    "metadata": lbl.metadata,
+                }
+            else:
+                item["label"] = None
+            items.append(item)
+        return items
 
     async def get_optimization_label_stats(
         self,
         test_suite_id: UUID,
     ) -> dict[str, Any]:
-        """Get manual label counts before and after the latest optimization cutoff.
+        """Get label counts before and after the latest optimization cutoff.
 
         Args:
             test_suite_id: UUID of the test suite.
 
         Returns:
-            Dict with 'before_cutoff', 'after_cutoff', and 'cutoff_date'.
+            Dict with ``before_cutoff``, ``after_cutoff``, ``cutoff_date``.
         """
-        query = """
-        query GetOptimizationLabelStats($testSuiteId: UUID!) {
-            getOptimizationLabelStats(testSuiteId: $testSuiteId) {
-                beforeCutoff
-                afterCutoff
-                cutoffDate
-            }
-        }
-        """
-        data = await self._execute(
-            query,
-            variables={"testSuiteId": str(test_suite_id)},
+        result = await self._client.get_optimization_label_stats(
+            test_suite_id=str(test_suite_id),
         )
-        stats = data.get("getOptimizationLabelStats", {})
+        stats = result.get_optimization_label_stats
         return {
-            "before_cutoff": stats.get("beforeCutoff", 0),
-            "after_cutoff": stats.get("afterCutoff", 0),
-            "cutoff_date": stats.get("cutoffDate"),
+            "before_cutoff": stats.before_cutoff,
+            "after_cutoff": stats.after_cutoff,
+            "cutoff_date": stats.cutoff_date,
         }
 
     async def create_evaluator(
@@ -393,27 +328,10 @@ class RemoteClient:
         Returns:
             UUID string of the created evaluator.
         """
-        query = """
-        mutation CreateEvaluator(
-            $testSuiteId: UUID!,
-            $programJson: String!,
-            $trainingCutoff: DateTime!,
-            $metadata: JSON
-        ) {
-            createEvaluator(
-                testSuiteId: $testSuiteId,
-                programJson: $programJson,
-                trainingCutoff: $trainingCutoff,
-                metadata: $metadata
-            )
-        }
-        """
-        variables: dict[str, Any] = {
-            "testSuiteId": str(test_suite_id),
-            "programJson": program_json,
-            "trainingCutoff": training_cutoff,
-        }
-        if metadata:
-            variables["metadata"] = metadata
-        data = await self._execute(query, variables=variables)
-        return data.get("createEvaluator", "")
+        result = await self._client.create_evaluator(
+            test_suite_id=str(test_suite_id),
+            program_json=program_json,
+            training_cutoff=training_cutoff,
+            metadata=metadata,
+        )
+        return result.create_evaluator

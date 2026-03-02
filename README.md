@@ -37,11 +37,10 @@ pixie-evals/
 ├── specs/
 │   └── overview.md             # Product specification
 ├── sdk/                        # Python SDK (local server)
-│   ├── pyproject.toml          # uv/hatch dependencies
-│   ├── ariadne_codegen.toml    # Remote client code generation config
+│   ├── pyproject.toml          # uv/hatch dependencies + ariadne-codegen config
 │   ├── remote_client/          # GraphQL operations & vendored schema
-│   │   ├── schema.graphql
-│   │   └── queries.graphql
+│   │   ├── schema.graphql      # Vendored pixie-server SDL schema
+│   │   └── queries.graphql     # GraphQL operations (queries + mutations)
 │   ├── labeling/               # User-authored HTML labeling pages (one per test suite)
 │   │   ├── my_test_suite.html  # Custom labeling page (edit this)
 │   │   └── my_test_suite.d.ts  # TypeScript types for INPUT variable (editor support)
@@ -57,8 +56,9 @@ pixie-evals/
 │   │   │   ├── scanner.py      # Discovers .html files at startup
 │   │   │   ├── server.py       # FastAPI routes: /labeling/*, /api/inputs/*
 │   │   │   └── scaffold.py     # Generates .html + .d.ts scaffold files
-│   │   └── remote_client/      # Generated client (ariadne-codegen)
-│   │       └── generated/
+│   │   └── remote_client/      # Remote pixie-server client
+│   │       ├── __init__.py     # RemoteClient facade (wraps generated client)
+│   │       └── generated/      # ariadne-codegen output (never edit manually)
 │   └── tests/
 │       ├── conftest.py
 │       ├── test_db.py
@@ -160,6 +160,7 @@ make codegen
 ## Tech Stack
 
 ### SDK (Python)
+
 - **FastAPI** + **Strawberry GraphQL** — local API server
 - **SQLite** (aiosqlite) — local dataset storage
 - **Custom HTML labeling pages** — user-authored `.html` files with server-side input injection
@@ -168,6 +169,7 @@ make codegen
 - **ariadne-codegen** — typed client for remote pixie-server
 
 ### Frontend (TypeScript)
+
 - **Vite** + **React** — build & UI framework
 - **Apollo Client** — GraphQL queries/mutations/subscriptions
 - **graphql-codegen** — TypeScript types from GraphQL schemas

@@ -1,15 +1,133 @@
-# Queries and mutations for calling the remote pixie-server
-# These will be used by ariadne-codegen to generate a typed client
-
-# TODO: Add operations once pixie-server schema is available
-# Examples:
-# mutation CreateTestSuite($name: String!, $description: String, $metricIds: [UUID!]!, $inputSchema: JSON!) {
-#   createTestSuite(name: $name, description: $description, metricIds: $metricIds, inputSchema: $inputSchema) {
-#     id
-#     name
-#   }
-# }
+# Queries and mutations for calling the remote pixie-server.
+# Used by ariadne-codegen to generate a typed Python client.
 #
-# mutation AddTestCases($testSuiteId: UUID!, $testCases: [TestCaseInput!]!) {
-#   addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)
-# }
+# Each operation here corresponds to a method on the generated RemoteClient.
+# After editing, regenerate with:  cd sdk && uv run ariadne-codegen
+
+# ---------------------------------------------------------------------------
+# Queries
+# ---------------------------------------------------------------------------
+
+query ListTestSuites {
+  listTestSuites {
+    id
+    name
+    description
+    config
+  }
+}
+
+query GetTestCasesWithLabel($ids: [UUID!]!) {
+  getTestCasesWithLabel(ids: $ids) {
+    testCase {
+      id
+      testSuite
+      description
+      createdAt
+    }
+    label {
+      id
+      metric
+      testCase
+      value
+      labeledAt
+      labeler
+      notes
+      metadata
+    }
+  }
+}
+
+query GetEvaluatorWithSignature($testSuiteId: UUID!) {
+  getEvaluatorWithSignature(testSuiteId: $testSuiteId) {
+    inputSchema
+    outputSchema
+    savedProgram
+  }
+}
+
+query GetManualLabelsAfterCutoff($testSuiteId: UUID!) {
+  getManualLabelsAfterCutoff(testSuiteId: $testSuiteId) {
+    testCase {
+      id
+      description
+      testSuite
+      createdAt
+    }
+    label {
+      id
+      metric
+      testCase
+      value
+      labeledAt
+      labeler
+      notes
+      metadata
+    }
+  }
+}
+
+query GetOptimizationLabelStats($testSuiteId: UUID!) {
+  getOptimizationLabelStats(testSuiteId: $testSuiteId) {
+    beforeCutoff
+    afterCutoff
+    cutoffDate
+  }
+}
+
+query GetTestSuiteMetrics($testSuiteId: UUID!) {
+  getTestSuiteMetrics(testSuiteId: $testSuiteId) {
+    id
+    name
+    description
+    config
+    account
+  }
+}
+
+query GetLabelingCandidates($testSuiteId: UUID!, $count: Int!) {
+  getLabelingCandidates(testSuiteId: $testSuiteId, count: $count)
+}
+
+# ---------------------------------------------------------------------------
+# Mutations
+# ---------------------------------------------------------------------------
+
+mutation CreateTestSuite(
+  $name: String!
+  $metricIds: [UUID!]!
+  $config: TestSuiteConfigInput!
+  $description: String
+) {
+  createTestSuite(
+    name: $name
+    metricIds: $metricIds
+    config: $config
+    description: $description
+  )
+}
+
+mutation AddTestCases(
+  $testSuiteId: UUID!
+  $testCases: [TestCaseWithLabelInput!]!
+) {
+  addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)
+}
+
+mutation LabelTestCases($testSuiteId: UUID!, $labels: [LabelDetailsInput!]!) {
+  labelTestCases(testSuiteId: $testSuiteId, labels: $labels)
+}
+
+mutation CreateEvaluator(
+  $testSuiteId: UUID!
+  $programJson: String!
+  $trainingCutoff: DateTime!
+  $metadata: JSON
+) {
+  createEvaluator(
+    testSuiteId: $testSuiteId
+    programJson: $programJson
+    trainingCutoff: $trainingCutoff
+    metadata: $metadata
+  )
+}

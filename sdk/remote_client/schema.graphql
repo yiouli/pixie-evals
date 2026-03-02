@@ -1,5 +1,195 @@
-# Vendored schema from the remote pixie-server.
-# Fetch the latest with:
-#   npx get-graphql-schema http://localhost:8000/graphql > sdk/remote_client/schema.graphql
-#
-# TODO: Fetch and populate this file from the running pixie-server.
+"""Exposes a URL that specifies the behavior of this scalar."""
+directive @specifiedBy(
+  """The URL that specifies the behavior of this scalar."""
+  url: String!
+) on SCALAR
+
+"""Indicates an Input Object is a OneOf Input Object."""
+directive @oneOf on INPUT_OBJECT
+
+type AuthTokenType {
+  accessToken: String!
+  tokenType: String!
+}
+
+input DataAdaptorConfigInput {
+  inputSchema: JSON!
+  fields: JSON!
+  metadata: JSON = null
+}
+
+type DataAdaptorType {
+  id: UUID!
+  name: String!
+  description: String
+  config: JSON!
+  testSuite: UUID!
+}
+
+"""Date with time (isoformat)"""
+scalar DateTime
+
+type EvaluatorType {
+  id: UUID!
+  name: String!
+  description: String
+  testSuite: UUID!
+  storagePath: String!
+  trainingCutoff: DateTime
+  updatedAt: DateTime!
+}
+
+type EvaluatorWithSignatureType {
+  inputSchema: JSON!
+  outputSchema: JSON!
+  savedProgram: JSON
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON
+
+input LabelDetailsInput {
+  testCaseId: UUID!
+  labels: [MetricLabelInputGql!]!
+  labeler: String = null
+  notes: String = null
+  metadata: JSON = null
+}
+
+enum LabeledByEnum {
+  AI
+  USER
+}
+
+type LabelingUiTemplateType {
+  id: UUID!
+  account: UUID!
+  name: String!
+  description: String
+  storagePath: String!
+}
+
+enum LabelSourcingEnum {
+  RECOMMENDED
+  CORRECTION
+  MANUAL
+}
+
+type LabelType {
+  id: UUID!
+  metric: UUID!
+  testCase: UUID!
+  value: JSON!
+  labeledAt: DateTime!
+  labeler: UUID
+  notes: String
+  metadata: JSON
+}
+
+input MetricConfigInput {
+  type: String!
+  categories: JSON = null
+  scaling: Int = null
+}
+
+input MetricLabelInputGql {
+  metricId: UUID!
+  value: JSON!
+}
+
+type MetricType {
+  id: UUID!
+  name: String!
+  description: String
+  config: JSON!
+  account: UUID!
+}
+
+type Mutation {
+  getAuthToken(username: String!, password: String!): AuthTokenType!
+  createMetric(name: String!, config: MetricConfigInput!, description: String = null): UUID!
+  createTestSuite(name: String!, metricIds: [UUID!]!, config: TestSuiteConfigInput!, description: String = null): UUID!
+  createDataAdaptor(name: String!, testSuiteId: UUID!, config: DataAdaptorConfigInput!, description: String = null): UUID!
+  createEvaluator(testSuiteId: UUID!, programJson: String!, trainingCutoff: DateTime!, metadata: JSON = null): UUID!
+  addTestCases(testSuiteId: UUID!, testCases: [TestCaseWithLabelInput!]!, dataAdaptorId: UUID = null): [UUID!]!
+  removeTestCases(testSuiteId: UUID!, testCaseIds: [UUID!]!): [UUID!]!
+  labelTestCases(testSuiteId: UUID!, labels: [LabelDetailsInput!]!): [UUID!]!
+  skipLabeling(testSuiteId: UUID!, testCaseId: UUID!): Boolean!
+}
+
+type OptimizationLabelStats {
+  beforeCutoff: Int!
+  afterCutoff: Int!
+  cutoffDate: DateTime
+}
+
+type Query {
+  listTestSuites: [TestSuiteType!]!
+  listTestCaseIds(filters: TestCaseFiltersInput = null): [UUID!]!
+  getTestCasesWithLabel(ids: [UUID!]!): [TestCaseWithLabelType!]!
+  listMetrics: [MetricType!]!
+  listEvaluators(testSuiteId: UUID!): [EvaluatorType!]!
+  getEvaluatorContent(id: UUID!): String
+  listLabelingUiTemplates(accountId: UUID!): [LabelingUiTemplateType!]!
+  getLabelingUiTemplateContent(id: UUID!): String
+  listDataAdaptors(testSuiteId: UUID!): [DataAdaptorType!]!
+  getLabelingCandidates(testSuiteId: UUID!, count: Int! = 10): [UUID!]!
+  getTestSuiteMetrics(testSuiteId: UUID!): [MetricType!]!
+  getEvaluatorWithSignature(testSuiteId: UUID!): EvaluatorWithSignatureType
+  getManualLabelsAfterCutoff(testSuiteId: UUID!): [TestCaseWithLabelType!]!
+  getOptimizationLabelStats(testSuiteId: UUID!): OptimizationLabelStats!
+}
+
+input TestCaseFiltersInput {
+  testSuiteIds: [UUID!] = null
+  createdBefore: DateTime = null
+  createdAfter: DateTime = null
+  labeled: Boolean = null
+  labeledBy: LabeledByEnum = null
+  sourcing: LabelSourcingEnum = null
+}
+
+input TestCaseLabelInput {
+  metricId: UUID!
+  value: JSON!
+  notes: String = null
+}
+
+type TestCaseType {
+  id: UUID!
+  description: String
+  embedding: [Float!]
+  dataAdaptor: UUID
+  testSuite: UUID!
+  createdAt: DateTime!
+}
+
+input TestCaseWithLabelInput {
+  embedding: [Float!]!
+  description: String = null
+  labels: [TestCaseLabelInput!] = null
+}
+
+type TestCaseWithLabelType {
+  testCase: TestCaseType!
+  label: LabelType
+}
+
+input TestSuiteConfigInput {
+  inputSchema: JSON!
+}
+
+type TestSuiteType {
+  id: UUID!
+  name: String!
+  description: String
+  account: UUID!
+  creator: UUID!
+  labelingUiTemplate: UUID
+  config: JSON!
+}
+
+scalar UUID
+
