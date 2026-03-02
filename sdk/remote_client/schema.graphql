@@ -1,0 +1,5 @@
+# Vendored schema from the remote pixie-server.
+# Fetch the latest with:
+#   npx get-graphql-schema http://localhost:8000/graphql > sdk/remote_client/schema.graphql
+#
+# TODO: Fetch and populate this file from the running pixie-server.

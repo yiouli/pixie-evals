@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Manual Labeling | demo</title>
+</head>
+<body>
+  <div id="app-container"></div>
+  <script pixie-evals-labeling-input>
+    window.INPUT=undefined;
+  </script>
+  <script>
+    // The INPUT variable is injected by the pixie-evals framework.
+    // See demo.d.ts for the TypeScript type definition.
+    // Customize this page to display your test case data for labeling.
+    const container = document.getElementById('app-container');
+    const preElement = document.createElement('pre')
+    preElement.textContent = JSON.stringify(window.INPUT, undefined, 2);
+    container.appendChild(preElement);
+  </script>
+</body>
+</html>
