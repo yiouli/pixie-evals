@@ -65,14 +65,11 @@ export function TestSuiteView() {
   const metrics = metricsData?.getTestSuiteMetrics ?? [];
 
   // Fetch optimization label stats to determine if optimize button should be enabled
-  const { data: labelStatsData } = useQuery(
-    GET_OPTIMIZATION_LABEL_STATS,
-    {
-      client: remoteClient,
-      variables: { testSuiteId: testSuiteId ?? "" },
-      skip: !isAuthenticated || !testSuiteId,
-    },
-  );
+  const { data: labelStatsData } = useQuery(GET_OPTIMIZATION_LABEL_STATS, {
+    client: remoteClient,
+    variables: { testSuiteId: testSuiteId ?? "" },
+    skip: !isAuthenticated || !testSuiteId,
+  });
   const labelStats = labelStatsData?.getOptimizationLabelStats;
   const canOptimize = useMemo(() => {
     if (!labelStats) return false;
@@ -133,7 +130,7 @@ export function TestSuiteView() {
   };
 
   const handleSaveLabel = async (
-    ratings: Record<string, number>,
+    ratings: Record<string, number | string>,
     notes: string,
   ) => {
     if (!selectedEntryId) return;
@@ -170,9 +167,7 @@ export function TestSuiteView() {
   if (!testSuite) {
     return (
       <Container maxWidth="xl" sx={{ py: 3 }}>
-        <Alert severity="warning">
-          Evaluation not found: {testSuiteId}
-        </Alert>
+        <Alert severity="warning">Evaluation not found: {testSuiteId}</Alert>
         <Button onClick={() => navigate("/")} sx={{ mt: 2 }}>
           Back to selection
         </Button>
@@ -278,10 +273,7 @@ export function TestSuiteView() {
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             {metrics.map((metric) => (
-              <MetricChip
-                key={metric.id as string}
-                metric={metric}
-              />
+              <MetricChip key={metric.id as string} metric={metric} />
             ))}
           </Stack>
         </Box>
@@ -331,6 +323,7 @@ export function TestSuiteView() {
         metrics={metrics.map((m) => ({
           id: m.id as string,
           name: m.name,
+          config: m.config,
         }))}
         onSave={handleSaveLabel}
         onSkip={handleSkip}

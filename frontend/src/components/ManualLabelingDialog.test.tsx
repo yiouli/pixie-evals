@@ -16,7 +16,7 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 const mockFetchLabelingHtml = vi.fn();
 let mockQueryResult: {
   loading: boolean;
-  data: { getLabelingHtml: string } | undefined;
+  data: { getLabelingHtml: string | null } | undefined;
   error: { message: string } | undefined;
 } = { loading: false, data: undefined, error: undefined };
 
@@ -38,9 +38,27 @@ vi.mock("../graphql/sdk/query", () => ({
   GET_LABELING_HTML: {},
 }));
 
+// Mock env for SDK_BASE_URL
+vi.mock("../lib/env", () => ({
+  SDK_BASE_URL: "http://localhost:8100",
+}));
+
+// Mock react18-json-view
+vi.mock("react18-json-view", () => ({
+  default: ({ src }: { src: unknown }) => (
+    <pre data-testid="json-view">{JSON.stringify(src)}</pre>
+  ),
+}));
+vi.mock("react18-json-view/src/style.css", () => ({}));
+
 const SAMPLE_METRICS = [
-  { id: "m1", name: "Accuracy" },
-  { id: "m2", name: "Relevance" },
+  { id: "m1", name: "Accuracy", config: { type: "scale", scaling: 1 } },
+  { id: "m2", name: "Relevance", config: { type: "scale", scaling: 5 } },
+  {
+    id: "m3",
+    name: "Tone",
+    config: { type: "category", categories: ["Good", "Bad", "Neutral"] },
+  },
 ];
 
 describe("ManualLabelingDialog", () => {
@@ -143,7 +161,7 @@ describe("ManualLabelingDialog", () => {
     });
   });
 
-  it("should render metric sliders", () => {
+  it("should render metric-specific inputs", () => {
     render(
       <TestWrapper>
         <ManualLabelingDialog
@@ -155,6 +173,14 @@ describe("ManualLabelingDialog", () => {
     );
     expect(screen.getByText("Accuracy")).toBeInTheDocument();
     expect(screen.getByText("Relevance")).toBeInTheDocument();
+    expect(screen.getByText("Tone")).toBeInTheDocument();
+    // Binary metric shows approve/reject icons
+    expect(screen.getByLabelText("approve")).toBeInTheDocument();
+    expect(screen.getByLabelText("reject")).toBeInTheDocument();
+    // Category metric shows toggle buttons
+    expect(screen.getByText("Good")).toBeInTheDocument();
+    expect(screen.getByText("Bad")).toBeInTheDocument();
+    expect(screen.getByText("Neutral")).toBeInTheDocument();
   });
 
   it("should show 'no metrics' message when metrics is empty", () => {
@@ -192,11 +218,7 @@ describe("ManualLabelingDialog", () => {
     const onSkip = vi.fn();
     render(
       <TestWrapper>
-        <ManualLabelingDialog
-          open={true}
-          onClose={vi.fn()}
-          onSkip={onSkip}
-        />
+        <ManualLabelingDialog open={true} onClose={vi.fn()} onSkip={onSkip} />
       </TestWrapper>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Skip" }));
@@ -212,5 +234,37 @@ describe("ManualLabelingDialog", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("should show JSON view when getLabelingHtml returns null", async () => {
+    // Simulate query returning null (no custom HTML)
+    mockQueryResult = {
+      loading: false,
+      data: { getLabelingHtml: null },
+      error: undefined,
+    };
+
+    // Mock fetch for raw input data
+    const mockInputData = { prompt: "test prompt", response: "test response" };
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockInputData,
+    } as Response);
+
+    render(
+      <TestWrapper>
+        <ManualLabelingDialog
+          open={true}
+          onClose={vi.fn()}
+          testCaseId="test-case-789"
+        />
+      </TestWrapper>,
+    );
+
+    await waitFor(() => {
+      const jsonView = screen.getByTestId("json-view");
+      expect(jsonView).toBeInTheDocument();
+      expect(jsonView.textContent).toContain("test prompt");
+    });
   });
 });

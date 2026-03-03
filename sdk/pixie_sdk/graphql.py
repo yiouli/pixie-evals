@@ -553,7 +553,7 @@ class Query:
         self,
         info: Info,
         test_case_id: UUID,
-    ) -> str:
+    ) -> str | None:
         """Serve a labeling HTML page for a remote test case.
 
         Resolves the test case to its test suite, finds the matching
@@ -568,11 +568,12 @@ class Query:
             test_case_id: Remote test case UUID.
 
         Returns:
-            The HTML string with input data injected.
+            The HTML string with input data injected, or ``None``
+            when no labeling page is registered for the test suite.
 
         Raises:
-            ValueError: If auth token is missing, or the test case,
-                suite, or labeling page is not found.
+            ValueError: If auth token is missing, or the test case
+                or suite is not found.
         """
         import re as _re
 
@@ -610,11 +611,7 @@ class Query:
         component = get_component(slot) if slot else None
 
         if component is None:
-            raise ValueError(
-                f"No labeling page registered for test suite "
-                f"'{suite_name}' (slot: '{slot}'). "
-                f"Available: {list_slots()}"
-            )
+            return None
 
         # --- Read HTML (always from disk for freshness) ---
         html = component.src_path.read_text(encoding="utf-8")
@@ -630,6 +627,19 @@ class Query:
             raise ValueError(f"Data entry for test case '{test_case_id}' not found")
 
         input_data: dict = entry["data"]
+
+        # --- Clean input data per test suite's input schema ---
+        suite_config = suite.get("config") or {}
+        if isinstance(suite_config, str):
+            try:
+                suite_config = json.loads(suite_config)
+            except (json.JSONDecodeError, TypeError):
+                suite_config = {}
+        input_schema = suite_config.get("input_schema") or {}
+        schema_props = input_schema.get("properties")
+        if schema_props:
+            input_data = {k: v for k, v in input_data.items() if k in schema_props}
+
         input_data["id"] = entry["id"]
 
         # --- Inject data into HTML ---
