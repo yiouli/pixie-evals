@@ -15,8 +15,10 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  */
 type Documents = {
     "\n  mutation GetAuthToken($username: String!, $password: String!) {\n    getAuthToken(username: $username, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n": typeof types.GetAuthTokenDocument,
-    "\n  mutation CreateMetric($name: String!, $config: MetricConfigInput!, $description: String) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n": typeof types.CreateMetricDocument,
-    "\n  mutation CreateTestSuite($name: String!, $metricIds: [UUID!]!, $config: TestSuiteConfigInput!, $description: String) {\n    createTestSuite(name: $name, metricIds: $metricIds, config: $config, description: $description)\n  }\n": typeof types.CreateTestSuiteDocument,
+    "\n  mutation SignUp($email: String!, $password: String!) {\n    signUp(email: $email, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n": typeof types.SignUpDocument,
+    "\n  mutation SignInWithOauth(\n    $provider: String!\n    $code: String!\n    $redirectUri: String!\n  ) {\n    signInWithOauth(\n      provider: $provider\n      code: $code\n      redirectUri: $redirectUri\n    ) {\n      accessToken\n      tokenType\n    }\n  }\n": typeof types.SignInWithOauthDocument,
+    "\n  mutation CreateMetric(\n    $name: String!\n    $config: MetricConfigInput!\n    $description: String\n  ) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n": typeof types.CreateMetricDocument,
+    "\n  mutation CreateTestSuite(\n    $name: String!\n    $metricIds: [UUID!]!\n    $config: TestSuiteConfigInput!\n    $description: String\n  ) {\n    createTestSuite(\n      name: $name\n      metricIds: $metricIds\n      config: $config\n      description: $description\n    )\n  }\n": typeof types.CreateTestSuiteDocument,
     "\n  mutation LabelTestCases($testSuiteId: UUID!, $labels: [LabelDetailsInput!]!) {\n    labelTestCases(testSuiteId: $testSuiteId, labels: $labels)\n  }\n": typeof types.LabelTestCasesDocument,
     "\n  mutation RemoveTestCases($testSuiteId: UUID!, $testCaseIds: [UUID!]!) {\n    removeTestCases(testSuiteId: $testSuiteId, testCaseIds: $testCaseIds)\n  }\n": typeof types.RemoveTestCasesDocument,
     "\n  mutation SkipLabeling($testSuiteId: UUID!, $testCaseId: UUID!) {\n    skipLabeling(testSuiteId: $testSuiteId, testCaseId: $testCaseId)\n  }\n": typeof types.SkipLabelingDocument,
@@ -34,8 +36,10 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  mutation GetAuthToken($username: String!, $password: String!) {\n    getAuthToken(username: $username, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n": types.GetAuthTokenDocument,
-    "\n  mutation CreateMetric($name: String!, $config: MetricConfigInput!, $description: String) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n": types.CreateMetricDocument,
-    "\n  mutation CreateTestSuite($name: String!, $metricIds: [UUID!]!, $config: TestSuiteConfigInput!, $description: String) {\n    createTestSuite(name: $name, metricIds: $metricIds, config: $config, description: $description)\n  }\n": types.CreateTestSuiteDocument,
+    "\n  mutation SignUp($email: String!, $password: String!) {\n    signUp(email: $email, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n": types.SignUpDocument,
+    "\n  mutation SignInWithOauth(\n    $provider: String!\n    $code: String!\n    $redirectUri: String!\n  ) {\n    signInWithOauth(\n      provider: $provider\n      code: $code\n      redirectUri: $redirectUri\n    ) {\n      accessToken\n      tokenType\n    }\n  }\n": types.SignInWithOauthDocument,
+    "\n  mutation CreateMetric(\n    $name: String!\n    $config: MetricConfigInput!\n    $description: String\n  ) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n": types.CreateMetricDocument,
+    "\n  mutation CreateTestSuite(\n    $name: String!\n    $metricIds: [UUID!]!\n    $config: TestSuiteConfigInput!\n    $description: String\n  ) {\n    createTestSuite(\n      name: $name\n      metricIds: $metricIds\n      config: $config\n      description: $description\n    )\n  }\n": types.CreateTestSuiteDocument,
     "\n  mutation LabelTestCases($testSuiteId: UUID!, $labels: [LabelDetailsInput!]!) {\n    labelTestCases(testSuiteId: $testSuiteId, labels: $labels)\n  }\n": types.LabelTestCasesDocument,
     "\n  mutation RemoveTestCases($testSuiteId: UUID!, $testCaseIds: [UUID!]!) {\n    removeTestCases(testSuiteId: $testSuiteId, testCaseIds: $testCaseIds)\n  }\n": types.RemoveTestCasesDocument,
     "\n  mutation SkipLabeling($testSuiteId: UUID!, $testCaseId: UUID!) {\n    skipLabeling(testSuiteId: $testSuiteId, testCaseId: $testCaseId)\n  }\n": types.SkipLabelingDocument,
@@ -73,11 +77,19 @@ export function graphql(source: "\n  mutation GetAuthToken($username: String!, $
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  mutation CreateMetric($name: String!, $config: MetricConfigInput!, $description: String) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n"): (typeof documents)["\n  mutation CreateMetric($name: String!, $config: MetricConfigInput!, $description: String) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n"];
+export function graphql(source: "\n  mutation SignUp($email: String!, $password: String!) {\n    signUp(email: $email, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n"): (typeof documents)["\n  mutation SignUp($email: String!, $password: String!) {\n    signUp(email: $email, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  mutation CreateTestSuite($name: String!, $metricIds: [UUID!]!, $config: TestSuiteConfigInput!, $description: String) {\n    createTestSuite(name: $name, metricIds: $metricIds, config: $config, description: $description)\n  }\n"): (typeof documents)["\n  mutation CreateTestSuite($name: String!, $metricIds: [UUID!]!, $config: TestSuiteConfigInput!, $description: String) {\n    createTestSuite(name: $name, metricIds: $metricIds, config: $config, description: $description)\n  }\n"];
+export function graphql(source: "\n  mutation SignInWithOauth(\n    $provider: String!\n    $code: String!\n    $redirectUri: String!\n  ) {\n    signInWithOauth(\n      provider: $provider\n      code: $code\n      redirectUri: $redirectUri\n    ) {\n      accessToken\n      tokenType\n    }\n  }\n"): (typeof documents)["\n  mutation SignInWithOauth(\n    $provider: String!\n    $code: String!\n    $redirectUri: String!\n  ) {\n    signInWithOauth(\n      provider: $provider\n      code: $code\n      redirectUri: $redirectUri\n    ) {\n      accessToken\n      tokenType\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation CreateMetric(\n    $name: String!\n    $config: MetricConfigInput!\n    $description: String\n  ) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n"): (typeof documents)["\n  mutation CreateMetric(\n    $name: String!\n    $config: MetricConfigInput!\n    $description: String\n  ) {\n    createMetric(name: $name, config: $config, description: $description)\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation CreateTestSuite(\n    $name: String!\n    $metricIds: [UUID!]!\n    $config: TestSuiteConfigInput!\n    $description: String\n  ) {\n    createTestSuite(\n      name: $name\n      metricIds: $metricIds\n      config: $config\n      description: $description\n    )\n  }\n"): (typeof documents)["\n  mutation CreateTestSuite(\n    $name: String!\n    $metricIds: [UUID!]!\n    $config: TestSuiteConfigInput!\n    $description: String\n  ) {\n    createTestSuite(\n      name: $name\n      metricIds: $metricIds\n      config: $config\n      description: $description\n    )\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

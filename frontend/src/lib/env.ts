@@ -22,3 +22,17 @@ export const SDK_SERVER_WS_URL =
 /** Local SDK server base URL (for labeling UI iframes, etc.). */
 export const SDK_BASE_URL =
   import.meta.env.VITE_SDK_BASE_URL ?? "http://localhost:8100";
+
+/**
+ * Google OAuth client ID.
+ * Set via VITE_GOOGLE_CLIENT_ID. When empty, the Google sign-in button is hidden.
+ */
+export const GOOGLE_CLIENT_ID: string =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+
+/**
+ * GitHub OAuth client ID.
+ * Set via VITE_GITHUB_CLIENT_ID. When empty, the GitHub sign-in button is hidden.
+ */
+export const GITHUB_CLIENT_ID: string =
+  import.meta.env.VITE_GITHUB_CLIENT_ID ?? "";
