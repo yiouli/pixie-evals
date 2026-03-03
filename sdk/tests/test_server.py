@@ -285,8 +285,8 @@ class TestGetLabelingHtmlQuery:
             assert data.get("errors")
             assert "not found on remote" in data["errors"][0]["message"]
 
-    def test_no_labeling_page_returns_error(self, client):
-        """getLabelingHtml returns error when no labeling page for suite."""
+    def test_no_labeling_page_returns_null(self, client):
+        """getLabelingHtml returns null when no labeling page for suite."""
         test_case_id = str(uuid4())
         test_suite_id = str(uuid4())
 
@@ -318,8 +318,91 @@ class TestGetLabelingHtmlQuery:
             )
             assert response.status_code == 200
             data = response.json()
-            assert data.get("errors")
-            assert "No labeling page" in data["errors"][0]["message"]
+            assert data["data"]["getLabelingHtml"] is None
+
+    def test_cleans_input_data_per_input_schema(self, client, tmp_path):
+        """getLabelingHtml removes extra properties not in input_schema."""
+        test_case_id = str(uuid4())
+        test_suite_id = str(uuid4())
+        local_entry_id = str(uuid4())
+
+        html_file = tmp_path / "demo.html"
+        html_file.write_text(
+            "<!DOCTYPE html><html><body>"
+            "<script pixie-evals-labeling-input>\n"
+            "window.INPUT=undefined;\n"
+            "</script></body></html>"
+        )
+        set_component(
+            "demo",
+            RegisteredComponent(slot="demo", src_path=html_file),
+        )
+
+        # Entry has extra keys beyond what the input schema defines
+        entry_data = {
+            "prompt": "hello",
+            "response": "world",
+            "_internal": "x",
+            "extra": "junk",
+        }
+        mock_entry = {
+            "id": local_entry_id,
+            "dataset_id": str(uuid4()),
+            "data": entry_data,
+        }
+
+        suite_config = {
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "response": {"type": "string"},
+                },
+            }
+        }
+
+        mock_conn = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_test_case = AsyncMock(
+            return_value={"id": test_case_id, "testSuite": test_suite_id}
+        )
+        mock_client.get_test_suite = AsyncMock(
+            return_value={"id": test_suite_id, "name": "Demo", "config": suite_config}
+        )
+
+        with (
+            patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
+            patch(
+                "pixie_sdk.db.get_local_entry_id",
+                new=AsyncMock(return_value=local_entry_id),
+            ),
+            patch(
+                "pixie_sdk.db.get_data_entry", new=AsyncMock(return_value=mock_entry)
+            ),
+            patch("pixie_sdk.remote_client.RemoteClient", return_value=mock_client),
+            patch("pixie_sdk.components.scanner.rescan_components"),
+        ):
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """
+                        query GetLabelingHtml($testCaseId: UUID!) {
+                            getLabelingHtml(testCaseId: $testCaseId)
+                        }
+                    """,
+                    "variables": {"testCaseId": test_case_id},
+                },
+                headers={"Authorization": "Bearer my-jwt-token"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            html = data["data"]["getLabelingHtml"]
+            assert '"prompt"' in html
+            assert '"response"' in html
+            assert '"_internal"' not in html
+            assert '"extra"' not in html
+            # The injected "id" field should always be present
+            assert f'"{local_entry_id}"' in html
 
 
 # ============================================================================

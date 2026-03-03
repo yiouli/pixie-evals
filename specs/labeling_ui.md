@@ -35,7 +35,7 @@ Each `.html` file must contain exactly one placeholder block:
 
 ```html
 <script pixie-evals-labeling-input>
-  window.INPUT=undefined;
+  window.INPUT = undefined;
 </script>
 ```
 
@@ -43,7 +43,7 @@ The `window.INPUT=undefined` initialiser is only there so the file is valid HTML
 
 ```html
 <script pixie-evals-labeling-input>
-window.INPUT={"field": "value", ...};
+  window.INPUT={"field": "value", ...};
 </script>
 ```
 
@@ -51,12 +51,12 @@ window.INPUT={"field": "value", ...};
 
 ### Rules
 
-| Rule | Detail |
-|------|--------|
-| Placeholder required | The `<script pixie-evals-labeling-input>` block must appear exactly once |
-| File name = route segment | `trace_comparison.html` → `/labeling/trace_comparison` |
-| No sub-folders | Only files directly in the `labeling/` dir are registered |
-| `.html` only | `.tsx`, `.jsx`, `.js` and other types are ignored |
+| Rule                      | Detail                                                                   |
+| ------------------------- | ------------------------------------------------------------------------ |
+| Placeholder required      | The `<script pixie-evals-labeling-input>` block must appear exactly once |
+| File name = route segment | `trace_comparison.html` → `/labeling/trace_comparison`                   |
+| No sub-folders            | Only files directly in the `labeling/` dir are registered                |
+| `.html` only              | `.tsx`, `.jsx`, `.js` and other types are ignored                        |
 
 ---
 
@@ -130,22 +130,22 @@ Called once in the FastAPI lifespan. Registers every `.html` file using its stem
 
 #### `GET /labeling/{test_case_id}` (requires `Authorization: Bearer <token>` header)
 
-The `test_case_id` is a **remote test case UUID**.  The frontend fetches
+The `test_case_id` is a **remote test case UUID**. The frontend fetches
 this endpoint using `fetch()` with the Authorization header and renders
 the response via `<iframe srcdoc=...>`.
 
 Resolution flow:
 
 1. **Authenticate** — extract the JWT from the `Authorization: Bearer`
-   header.  Return 401 if missing.
-2. **Validate UUID** — parse `test_case_id` as a UUID.  Return 400 if
+   header. Return 401 if missing.
+2. **Validate UUID** — parse `test_case_id` as a UUID. Return 400 if
    invalid.
 3. **Resolve test case** — call `RemoteClient(auth_token=token).get_test_case(uuid)`
    to fetch the test case and its `testSuite` foreign key.
 4. **Resolve test suite** — call `RemoteClient.get_test_suite(suite_id)`
    to get the suite name.
 5. **Find labeling page** — convert suite name to snake_case, look up
-   the slot in the registry.  Return 404 if not found.
+   the slot in the registry. Return 404 if not found.
 6. Read the HTML file from disk.
 7. Fetch the input data from SQLite via `test_case_map` → `data_entries`.
 8. Replace the placeholder block:
@@ -172,10 +172,10 @@ Returns `{"slots": [...]}`.
 
 Generates two files named after the normalized (snake_case) test suite name:
 
-| File | Name | Content |
-|------|------|---------|
-| HTML labeling page | `{snake_name}.html` | Minimal HTML with placeholder + starter display script |
-| TypeScript types | `{snake_name}.d.ts` | `InputProps` interface + `declare const INPUT: InputProps` |
+| File               | Name                | Content                                                    |
+| ------------------ | ------------------- | ---------------------------------------------------------- |
+| HTML labeling page | `{snake_name}.html` | Minimal HTML with placeholder + starter display script     |
+| TypeScript types   | `{snake_name}.d.ts` | `InputProps` interface + `declare const INPUT: InputProps` |
 
 Because test suite names are unique on the remote server, normalized names are also unique — no UUID needed.
 
@@ -184,24 +184,24 @@ Because test suite names are unique on the remote server, normalized names are a
 ```html
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Manual Labeling | {suite_name}</title>
-</head>
-<body>
-  <div id="app-container"></div>
-  <script pixie-evals-labeling-input>
-    window.INPUT=undefined;
-  </script>
-  <script>
-    // The INPUT variable is injected by the pixie-evals framework.
-    // See {suite_name}.d.ts for the TypeScript type definition.
-    // Customize this page to display your test case data for labeling.
-    const container = document.getElementById('app-container');
-    const preElement = document.createElement('pre')
-    preElement.textContent = JSON.stringify(window.INPUT, undefined, 2);
-  </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Manual Labeling | {suite_name}</title>
+  </head>
+  <body>
+    <div id="app-container"></div>
+    <script pixie-evals-labeling-input>
+      window.INPUT = undefined;
+    </script>
+    <script>
+      // The INPUT variable is injected by the pixie-evals framework.
+      // See {suite_name}.d.ts for the TypeScript type definition.
+      // Customize this page to display your test case data for labeling.
+      const container = document.getElementById("app-container");
+      const preElement = document.createElement("pre");
+      preElement.textContent = JSON.stringify(window.INPUT, undefined, 2);
+    </script>
+  </body>
 </html>
 ```
 
@@ -223,9 +223,9 @@ Returns the relative path of the created `.html` file (e.g. `"labeling/trace_com
 
 The labeling endpoint uses the **remote test case UUID** as the sole URL parameter. The server resolves the test suite name internally.
 
-| Test suite name | Normalized name | HTML file | Route |
-|----------------|----------------|-----------|-------|
-| `Trace Comparison` | `trace_comparison` | `labeling/trace_comparison.html` | `GET /labeling/{test_case_uuid}` |
+| Test suite name     | Normalized name     | HTML file                         | Route                            |
+| ------------------- | ------------------- | --------------------------------- | -------------------------------- |
+| `Trace Comparison`  | `trace_comparison`  | `labeling/trace_comparison.html`  | `GET /labeling/{test_case_uuid}` |
 | `LLM Output Review` | `llm_output_review` | `labeling/llm_output_review.html` | `GET /labeling/{test_case_uuid}` |
 
 All routes require the `Authorization: Bearer <token>` header.
@@ -249,6 +249,7 @@ mutation {
 ```
 
 Two files are created in `labeling/`:
+
 - `<suite_name>.html` — customize this
 - `<suite_name>.d.ts` — TypeScript types for `window.INPUT`
 
@@ -259,20 +260,27 @@ The frontend opens the Manual Label dialog, which calls:
 ```javascript
 fetch(`${SDK_BASE_URL}/labeling/${testCaseId}`, {
   headers: { Authorization: `Bearer ${token}` },
-})
+});
 ```
 
 What happens on the server:
+
 1. FastAPI extracts the JWT from the `Authorization` header
 2. Queries the remote pixie-server for the test case → gets its `testSuite` FK
-3. Queries the remote pixie-server for the test suite → gets its name
+3. Queries the remote pixie-server for the test suite → gets its name and config
 4. Converts the suite name to snake_case → looks up the slot in the registry
-5. Reads the HTML file from disk
-6. Fetches the input data from local SQLite via `test_case_map` → `data_entries`
-7. Replaces the `<script pixie-evals-labeling-input>` block with `window.INPUT={...}`
-8. Returns the modified HTML
+5. If no labeling page found → returns `null` (frontend falls back to JSON viewer)
+6. Reads the HTML file from disk
+7. Fetches the input data from local SQLite via `test_case_map` → `data_entries`
+8. **Cleans the input data** — removes properties not in the test suite's `input_schema`
+9. Replaces the `<script pixie-evals-labeling-input>` block with `window.INPUT={...}`
+10. Returns the modified HTML
 
 The frontend renders it via `<iframe srcDoc={htmlContent}>`.
+
+When `getLabelingHtml` returns `null` (no custom HTML), the frontend fetches
+the raw input data from `GET /api/inputs/{testCaseId}` and renders it
+using `react18-json-view` as a default display.
 
 ---
 
