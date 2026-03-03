@@ -2,6 +2,8 @@ import { useState, useCallback } from "react";
 import { useDatasetStore } from "../lib/store";
 import type { UploadFileMutation } from "../generated/sdk/graphql";
 import { SDK_SERVER_URL } from "../lib/env";
+import { sdkClient } from "../lib/apolloClient";
+import { LIST_DATASETS } from "../graphql/sdk/query";
 
 /** Dataset type as returned by the UploadFile mutation. */
 type UploadedDataset = UploadFileMutation["uploadFile"];
@@ -79,6 +81,9 @@ export function useDatasetUpload() {
       const ds = json.data.uploadFile;
       setDataset(ds);
       setCurrentDataset(ds.id);
+      // Refetch the datasets list so all active LIST_DATASETS queries
+      // (e.g. SelectionView, TestSuiteConfigDialog) show the new dataset.
+      await sdkClient.refetchQueries({ include: [LIST_DATASETS] });
       return ds;
     } catch (e) {
       setError(e instanceof Error ? e : new Error("Upload failed"));
