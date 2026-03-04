@@ -344,10 +344,10 @@ class TestE2ELabelingPage:
                 new=AsyncMock(return_value=mock_entry),
             ),
             patch(
-                "pixie_sdk.remote_client.RemoteClient",
+                "pixie_sdk.graphql.RemoteClient",
                 return_value=mock_client,
             ),
-            patch("pixie_sdk.components.scanner.rescan_components"),
+            patch("pixie_sdk.graphql.rescan_components"),
         ):
             from pixie_sdk.server import app
 
@@ -403,10 +403,10 @@ class TestE2ELabelingPage:
         with (
             patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
             patch(
-                "pixie_sdk.remote_client.RemoteClient",
+                "pixie_sdk.graphql.RemoteClient",
                 return_value=mock_client,
             ),
-            patch("pixie_sdk.components.scanner.rescan_components"),
+            patch("pixie_sdk.graphql.rescan_components"),
         ):
             from pixie_sdk.server import app
 
@@ -429,5 +429,5 @@ class TestE2ELabelingPage:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data.get("errors")
-        assert "No labeling page" in data["errors"][0]["message"]
+        # Resolver returns None when no labeling component is registered
+        assert data["data"]["getLabelingHtml"] is None

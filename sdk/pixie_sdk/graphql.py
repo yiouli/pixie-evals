@@ -12,6 +12,7 @@ import enum
 import json
 import logging
 import os
+import re as _re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Any, AsyncGenerator
 from uuid import UUID
 
 import strawberry
+from jinja2 import Environment, FileSystemLoader
 from strawberry.file_uploads import Upload
 from strawberry.scalars import JSON
 from strawberry.types import Info
@@ -26,6 +28,11 @@ from strawberry.types import Info
 from pixie_sdk import db
 from pixie_sdk import embed
 from pixie_sdk import ingest
+from pixie_sdk.components import PLACEHOLDER_ATTR, get_components_dir
+from pixie_sdk.components.registry import get_component, list_slots
+from pixie_sdk.components.scaffold import scaffold_component, to_snake_case
+from pixie_sdk.components.scanner import rescan_components
+from pixie_sdk.remote_client import RemoteClient
 
 logger = logging.getLogger(__name__)
 
@@ -526,8 +533,6 @@ class Query:
         Returns:
             HTML string rendered from the Jinja2 template.
         """
-        from jinja2 import Environment, FileSystemLoader
-
         conn = info.context["db"]
         entry = await db.get_data_entry(conn, entry_id)
 
@@ -575,14 +580,6 @@ class Query:
             ValueError: If auth token is missing, or the test case
                 or suite is not found.
         """
-        import re as _re
-
-        from pixie_sdk.components import PLACEHOLDER_ATTR
-        from pixie_sdk.components.registry import get_component
-        from pixie_sdk.components.scaffold import to_snake_case
-        from pixie_sdk.components.scanner import rescan_components
-        from pixie_sdk.remote_client import RemoteClient
-
         # --- Auth ---
         auth_token = _get_auth_token_from_context(info.context)
         if not auth_token:
@@ -663,9 +660,6 @@ class Query:
         Returns:
             Sorted list of slot name strings.
         """
-        from pixie_sdk.components.registry import list_slots
-        from pixie_sdk.components.scanner import rescan_components
-
         rescan_components()
         return list_slots()
 
@@ -785,10 +779,6 @@ class Mutation:
         Returns:
             The relative path of the created ``.html`` file.
         """
-        from pixie_sdk.components import get_components_dir
-        from pixie_sdk.components.scaffold import scaffold_component
-        from pixie_sdk.remote_client import RemoteClient
-
         client = RemoteClient()
         components_dir = get_components_dir()
         resolved = (
@@ -835,8 +825,6 @@ class Subscription:
         Yields:
             TestSuiteCreationProgress updates.
         """
-        from pixie_sdk.remote_client import RemoteClient
-
         test_suite_id: UUID | None = None
 
         try:
@@ -962,8 +950,6 @@ class Subscription:
         Yields:
             TestSuiteCreationProgress updates.
         """
-        from pixie_sdk.remote_client import RemoteClient
-
         try:
             yield TestSuiteCreationProgress(
                 status=CreationStatus.EMBEDDING,
@@ -1089,8 +1075,6 @@ class Subscription:
         """
         import dspy
         from dotenv import load_dotenv
-
-        from pixie_sdk.remote_client import RemoteClient
 
         try:
             load_dotenv()  # Load OPENAI_API_KEY from .env if present
@@ -1315,8 +1299,6 @@ class Subscription:
         """
         import dspy
         from dotenv import load_dotenv
-
-        from pixie_sdk.remote_client import RemoteClient
 
         try:
             load_dotenv()  # Load OPENAI_API_KEY from .env if present

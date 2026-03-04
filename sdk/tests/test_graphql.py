@@ -264,42 +264,40 @@ class TestCreateTestSuiteProgress:
     @pytest.mark.asyncio
     @patch("pixie_sdk.graphql.embed")
     @patch("pixie_sdk.graphql.db")
-    @patch("pixie_sdk.graphql.RemoteClient", create=True)
-    async def test_yields_creating_status(self, mock_remote_cls, mock_db, mock_embed):
+    @patch("pixie_sdk.graphql.RemoteClient")
+    async def test_yields_creating_status(self, mock_rc_class, mock_db, mock_embed):
         """First yield should have status=CREATING."""
-        # Patch remote client import inside the subscription
-        with patch("pixie_sdk.remote_client.RemoteClient") as mock_rc_class:
-            mock_client = AsyncMock()
-            mock_client.create_test_suite = AsyncMock(return_value=uuid4())
-            remote_ids = [str(uuid4())]
-            mock_client.add_test_cases = AsyncMock(return_value=remote_ids)
-            mock_rc_class.return_value = mock_client
+        mock_client = AsyncMock()
+        mock_client.create_test_suite = AsyncMock(return_value=uuid4())
+        remote_ids = [str(uuid4())]
+        mock_client.add_test_cases = AsyncMock(return_value=remote_ids)
+        mock_rc_class.return_value = mock_client
 
-            mock_db.get_data_entries = AsyncMock(return_value=[_make_entry_dict()])
-            mock_embed.embed_batch = AsyncMock(return_value=[[0.1, 0.2]])
-            # The upload loop calls db.get_db() and db.save_test_case_map().
-            mock_db.get_db = AsyncMock(return_value=AsyncMock())
-            mock_db.save_test_case_map = AsyncMock()
+        mock_db.get_data_entries = AsyncMock(return_value=[_make_entry_dict()])
+        mock_embed.embed_batch = AsyncMock(return_value=[[0.1, 0.2]])
+        # The upload loop calls db.get_db() and db.save_test_case_map().
+        mock_db.get_db = AsyncMock(return_value=AsyncMock())
+        mock_db.save_test_case_map = AsyncMock()
 
-            sub = Subscription()
-            inp = TestSuiteCreateInput(
-                name="test",
-                input_schema={"type": "object"},
-            )
-            info = _mock_info()
+        sub = Subscription()
+        inp = TestSuiteCreateInput(
+            name="test",
+            input_schema={"type": "object"},
+        )
+        info = _mock_info()
 
-            progress_updates = []
-            async for update in sub.create_test_suite_progress(
-                info=info, dataset_id=uuid4(), input=inp
-            ):
-                progress_updates.append(update)
+        progress_updates = []
+        async for update in sub.create_test_suite_progress(
+            info=info, dataset_id=uuid4(), input=inp
+        ):
+            progress_updates.append(update)
 
-            assert progress_updates[0].status == CreationStatus.CREATING
+        assert progress_updates[0].status == CreationStatus.CREATING
 
     @pytest.mark.asyncio
     async def test_yields_error_on_remote_failure(self):
         """Should yield ERROR when remote client fails."""
-        with patch("pixie_sdk.remote_client.RemoteClient") as mock_rc_class:
+        with patch("pixie_sdk.graphql.RemoteClient") as mock_rc_class:
             mock_client = AsyncMock()
             mock_client.create_test_suite = AsyncMock(
                 side_effect=Exception("Connection refused")
@@ -326,7 +324,7 @@ class TestCreateTestSuiteProgress:
     @patch("pixie_sdk.graphql.db")
     async def test_yields_complete(self, mock_db, mock_embed):
         """Last yield should have status=COMPLETE and progress=1.0."""
-        with patch("pixie_sdk.remote_client.RemoteClient") as mock_rc_class:
+        with patch("pixie_sdk.graphql.RemoteClient") as mock_rc_class:
             ts_id = uuid4()
             mock_client = AsyncMock()
             mock_client.create_test_suite = AsyncMock(return_value=ts_id)
@@ -371,9 +369,9 @@ class TestMutationScaffoldLabelingComponent:
     """Test the scaffold_labeling_component mutation."""
 
     @pytest.mark.asyncio
-    @patch("pixie_sdk.components.get_components_dir")
-    @patch("pixie_sdk.components.scaffold.scaffold_component", new_callable=AsyncMock)
-    @patch("pixie_sdk.remote_client.RemoteClient")
+    @patch("pixie_sdk.graphql.get_components_dir")
+    @patch("pixie_sdk.graphql.scaffold_component", new_callable=AsyncMock)
+    @patch("pixie_sdk.graphql.RemoteClient")
     async def test_returns_path(
         self, mock_rc_cls, mock_scaffold, mock_get_dir, tmp_path
     ):
@@ -397,9 +395,9 @@ class TestMutationScaffoldLabelingComponent:
         assert call_kwargs.kwargs["test_suite_id"] == ts_id
 
     @pytest.mark.asyncio
-    @patch("pixie_sdk.components.get_components_dir")
-    @patch("pixie_sdk.components.scaffold.scaffold_component", new_callable=AsyncMock)
-    @patch("pixie_sdk.remote_client.RemoteClient")
+    @patch("pixie_sdk.graphql.get_components_dir")
+    @patch("pixie_sdk.graphql.scaffold_component", new_callable=AsyncMock)
+    @patch("pixie_sdk.graphql.RemoteClient")
     async def test_raises_on_not_found(
         self, mock_rc_cls, mock_scaffold, mock_get_dir, tmp_path
     ):

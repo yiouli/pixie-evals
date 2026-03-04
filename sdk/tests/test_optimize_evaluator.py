@@ -16,8 +16,8 @@ from pixie_sdk.graphql import (
     Subscription,
 )
 
-# Pre-import the remote_client module so patch.object works reliably
-import pixie_sdk.remote_client as _rc_module
+# Pre-import the graphql module so patch.object works reliably
+import pixie_sdk.graphql as _gql_module
 
 # ============================================================================
 # Mock dspy module (not installed in test env)
@@ -192,7 +192,7 @@ class TestOptimizeEvaluator:
         mock_client = AsyncMock()
         mock_client.get_manual_labels_after_cutoff = AsyncMock(return_value=[])
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):
@@ -215,7 +215,7 @@ class TestOptimizeEvaluator:
         )
         mock_client.get_evaluator_with_signature = AsyncMock(return_value=None)
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):
@@ -255,7 +255,7 @@ class TestOptimizeEvaluator:
         )
         mock_client.create_evaluator = AsyncMock(return_value=evaluator_id)
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):
@@ -295,7 +295,7 @@ class TestOptimizeEvaluator:
         )
         mock_client.create_evaluator = AsyncMock(return_value=str(uuid4()))
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):
@@ -344,7 +344,7 @@ class TestOptimizeEvaluator:
         )
         mock_client.create_evaluator = AsyncMock(return_value=str(uuid4()))
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):
@@ -370,7 +370,7 @@ class TestOptimizeEvaluator:
             side_effect=RuntimeError("Network error")
         )
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):
@@ -406,7 +406,7 @@ class TestOptimizeEvaluator:
         )
         mock_client.create_evaluator = AsyncMock(return_value=str(uuid4()))
 
-        with patch.object(_rc_module, "RemoteClient", return_value=mock_client):
+        with patch.object(_gql_module, "RemoteClient", return_value=mock_client):
             sub = Subscription()
             updates: list[OptimizationUpdate] = []
             async for update in sub.optimize_evaluator(_mock_info(), uuid4()):

@@ -207,9 +207,9 @@ class TestGetLabelingHtmlQuery:
                 "pixie_sdk.db.get_data_entry", new=AsyncMock(return_value=mock_entry)
             ),
             patch(
-                "pixie_sdk.remote_client.RemoteClient", return_value=mock_client
+                "pixie_sdk.graphql.RemoteClient", return_value=mock_client
             ) as MockClient,
-            patch("pixie_sdk.components.scanner.rescan_components"),
+            patch("pixie_sdk.graphql.rescan_components"),
         ):
             response = client.post(
                 "/graphql",
@@ -266,7 +266,7 @@ class TestGetLabelingHtmlQuery:
 
         with (
             patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
-            patch("pixie_sdk.remote_client.RemoteClient", return_value=mock_client),
+            patch("pixie_sdk.graphql.RemoteClient", return_value=mock_client),
         ):
             response = client.post(
                 "/graphql",
@@ -301,8 +301,8 @@ class TestGetLabelingHtmlQuery:
 
         with (
             patch("pixie_sdk.db.get_db", new=AsyncMock(return_value=mock_conn)),
-            patch("pixie_sdk.remote_client.RemoteClient", return_value=mock_client),
-            patch("pixie_sdk.components.scanner.rescan_components"),
+            patch("pixie_sdk.graphql.RemoteClient", return_value=mock_client),
+            patch("pixie_sdk.graphql.rescan_components"),
         ):
             response = client.post(
                 "/graphql",
@@ -379,8 +379,8 @@ class TestGetLabelingHtmlQuery:
             patch(
                 "pixie_sdk.db.get_data_entry", new=AsyncMock(return_value=mock_entry)
             ),
-            patch("pixie_sdk.remote_client.RemoteClient", return_value=mock_client),
-            patch("pixie_sdk.components.scanner.rescan_components"),
+            patch("pixie_sdk.graphql.RemoteClient", return_value=mock_client),
+            patch("pixie_sdk.graphql.rescan_components"),
         ):
             response = client.post(
                 "/graphql",

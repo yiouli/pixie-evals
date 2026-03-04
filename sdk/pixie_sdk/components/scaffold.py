@@ -22,6 +22,7 @@ See Also:
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -206,8 +207,6 @@ async def scaffold_component(
     # Extract input schema from config
     config = suite.get("config") or {}
     if isinstance(config, str):
-        import json
-
         config = json.loads(config)
     input_schema: dict[str, Any] = (
         config.get("input_schema") or config.get("inputSchema") or {}

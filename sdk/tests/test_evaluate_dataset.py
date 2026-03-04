@@ -549,8 +549,8 @@ class TestSaveEvaluationLabels:
 # evaluate_dataset subscription – integration-style tests
 # ============================================================================
 
-# Pre-import the remote_client module so patch.object works reliably
-import pixie_sdk.remote_client as _rc_module
+# Pre-import the graphql module so patch.object works reliably
+import pixie_sdk.graphql as _gql_module
 
 
 class TestEvaluateDatasetSubscription:
@@ -602,7 +602,7 @@ class TestEvaluateDatasetSubscription:
         mock_client.get_evaluator_with_signature = AsyncMock(return_value=None)
 
         with (
-            patch.object(_rc_module, "RemoteClient", return_value=mock_client),
+            patch.object(_gql_module, "RemoteClient", return_value=mock_client),
             patch.dict(sys.modules, {"dspy": mock_dspy_mod}),
         ):
             sub = Subscription()
@@ -630,7 +630,7 @@ class TestEvaluateDatasetSubscription:
         )
 
         with (
-            patch.object(_rc_module, "RemoteClient", return_value=mock_client),
+            patch.object(_gql_module, "RemoteClient", return_value=mock_client),
             patch.dict(sys.modules, {"dspy": mock_dspy_mod}),
         ):
             sub = Subscription()
@@ -672,7 +672,7 @@ class TestEvaluateDatasetSubscription:
         mock_dspy_mod.ChainOfThought.return_value = mock_cot
 
         with (
-            patch.object(_rc_module, "RemoteClient", return_value=mock_client),
+            patch.object(_gql_module, "RemoteClient", return_value=mock_client),
             patch.dict(sys.modules, {"dspy": mock_dspy_mod}),
         ):
             sub = Subscription()
@@ -722,7 +722,7 @@ class TestEvaluateDatasetSubscription:
         mock_dspy_mod.ChainOfThought.return_value = mock_cot
 
         with (
-            patch.object(_rc_module, "RemoteClient", return_value=mock_client),
+            patch.object(_gql_module, "RemoteClient", return_value=mock_client),
             patch.dict(sys.modules, {"dspy": mock_dspy_mod}),
         ):
             sub = Subscription()
@@ -772,7 +772,7 @@ class TestEvaluateDatasetSubscription:
         mock_dspy_mod.ChainOfThought.return_value = mock_cot
 
         with (
-            patch.object(_rc_module, "RemoteClient", return_value=mock_client),
+            patch.object(_gql_module, "RemoteClient", return_value=mock_client),
             patch.dict(sys.modules, {"dspy": mock_dspy_mod}),
         ):
             sub = Subscription()
@@ -816,7 +816,7 @@ class TestEvaluateDatasetSubscription:
         mock_dspy_mod.ChainOfThought.return_value = mock_cot
 
         with (
-            patch.object(_rc_module, "RemoteClient", return_value=mock_client),
+            patch.object(_gql_module, "RemoteClient", return_value=mock_client),
             patch.dict(sys.modules, {"dspy": mock_dspy_mod}),
         ):
             sub = Subscription()
