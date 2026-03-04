@@ -40,6 +40,7 @@ type EvaluatorType {
 }
 
 type EvaluatorWithSignatureType {
+  testSuiteDescription: String
   inputSchema: JSON!
   outputSchema: JSON!
   savedProgram: JSON
@@ -109,6 +110,8 @@ type MetricType {
 
 type Mutation {
   getAuthToken(username: String!, password: String!): AuthTokenType!
+  signUp(email: String!, password: String!): AuthTokenType!
+  signInWithOauth(provider: String!, code: String!, redirectUri: String!): AuthTokenType!
   createMetric(name: String!, config: MetricConfigInput!, description: String = null): UUID!
   createTestSuite(name: String!, metricIds: [UUID!]!, config: TestSuiteConfigInput!, description: String = null): UUID!
   createDataAdaptor(name: String!, testSuiteId: UUID!, config: DataAdaptorConfigInput!, description: String = null): UUID!
