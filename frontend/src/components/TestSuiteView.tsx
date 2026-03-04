@@ -65,11 +65,14 @@ export function TestSuiteView() {
   const metrics = metricsData?.getTestSuiteMetrics ?? [];
 
   // Fetch optimization label stats to determine if optimize button should be enabled
-  const { data: labelStatsData } = useQuery(GET_OPTIMIZATION_LABEL_STATS, {
-    client: remoteClient,
-    variables: { testSuiteId: testSuiteId ?? "" },
-    skip: !isAuthenticated || !testSuiteId,
-  });
+  const { data: labelStatsData, refetch: refetchLabelStats } = useQuery(
+    GET_OPTIMIZATION_LABEL_STATS,
+    {
+      client: remoteClient,
+      variables: { testSuiteId: testSuiteId ?? "" },
+      skip: !isAuthenticated || !testSuiteId,
+    },
+  );
   const labelStats = labelStatsData?.getOptimizationLabelStats;
   const canOptimize = useMemo(() => {
     if (!labelStats) return false;
@@ -140,6 +143,12 @@ export function TestSuiteView() {
     }));
     await submitLabel(selectedEntryId, labels, notes || undefined);
     setLabelingOpen(false);
+    // after adding a manual label we need up-to-date counts used by the
+    // "Optimize Evaluator" button. refetchLabelStats comes from the
+    // useQuery call above and may be undefined when the query is skipped.
+    if (refetchLabelStats) {
+      await refetchLabelStats();
+    }
   };
 
   const handleSkip = async () => {
