@@ -235,7 +235,7 @@ def _build_dspy_signature(
 
     namespace = {
         "__annotations__": annotations,
-        "__doc__": "Evaluate test case.",
+        "__doc__": "Your task is to evaluate the output of an AI system based on the following input data.",
         **fields,
     }
 
@@ -578,7 +578,7 @@ class Query:
         import re as _re
 
         from pixie_sdk.components import PLACEHOLDER_ATTR
-        from pixie_sdk.components.registry import get_component, list_slots
+        from pixie_sdk.components.registry import get_component
         from pixie_sdk.components.scaffold import to_snake_case
         from pixie_sdk.components.scanner import rescan_components
         from pixie_sdk.remote_client import RemoteClient
