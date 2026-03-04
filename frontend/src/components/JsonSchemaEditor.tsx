@@ -33,11 +33,7 @@ const DEFAULT_SCHEMA = {
   required: [] as string[],
 };
 
-const extensions = [
-  json(),
-  linter(jsonParseLinter()),
-  EditorView.lineWrapping,
-];
+const extensions = [json(), linter(jsonParseLinter()), EditorView.lineWrapping];
 
 /**
  * JsonSchemaEditor — A CodeMirror-based editor for JSON Schema objects.
@@ -45,9 +41,16 @@ const extensions = [
  * Renders a JSON editor with syntax highlighting, real-time parse validation,
  * and a "Prettify" button. Emits `{ parsed, raw }` on every change.
  */
-export function JsonSchemaEditor({ initialValue, onChange }: JsonSchemaEditorProps) {
+export function JsonSchemaEditor({
+  initialValue,
+  onChange,
+}: JsonSchemaEditorProps) {
   const [text, setText] = useState(() =>
-    JSON.stringify(initialValue === undefined ? DEFAULT_SCHEMA : initialValue, null, 2),
+    JSON.stringify(
+      initialValue === undefined ? DEFAULT_SCHEMA : initialValue,
+      null,
+      2,
+    ),
   );
   const [error, setError] = useState<string | null>(null);
 

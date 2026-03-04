@@ -36,7 +36,9 @@ describe("JsonSchemaEditor", () => {
         <JsonSchemaEditor onChange={vi.fn()} />
       </TestWrapper>,
     );
-    const textarea = screen.getByTestId("codemirror-stub") as HTMLTextAreaElement;
+    const textarea = screen.getByTestId(
+      "codemirror-stub",
+    ) as HTMLTextAreaElement;
     const parsed = JSON.parse(textarea.value);
     expect(parsed).toMatchObject({ type: "object" });
   });
@@ -48,7 +50,9 @@ describe("JsonSchemaEditor", () => {
         <JsonSchemaEditor initialValue={schema} onChange={vi.fn()} />
       </TestWrapper>,
     );
-    const textarea = screen.getByTestId("codemirror-stub") as HTMLTextAreaElement;
+    const textarea = screen.getByTestId(
+      "codemirror-stub",
+    ) as HTMLTextAreaElement;
     expect(JSON.parse(textarea.value)).toMatchObject(schema);
   });
 
@@ -93,7 +97,9 @@ describe("JsonSchemaEditor", () => {
         <JsonSchemaEditor onChange={vi.fn()} />
       </TestWrapper>,
     );
-    expect(screen.getByRole("link", { name: /json schema examples/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /json schema examples/i }),
+    ).toBeInTheDocument();
   });
 
   it("prettifies JSON when Prettify button is clicked", () => {
@@ -112,7 +118,10 @@ describe("JsonSchemaEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /prettify/i }));
     const calls = handleChange.mock.calls;
-    const lastCall = calls[calls.length - 1]?.[0] as { raw: string; parsed: unknown };
+    const lastCall = calls[calls.length - 1]?.[0] as {
+      raw: string;
+      parsed: unknown;
+    };
     expect(lastCall.raw).toContain("\n");
     expect(lastCall.parsed).toEqual({ type: "object" });
   });

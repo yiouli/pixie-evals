@@ -12,13 +12,13 @@ The "Dataset" section in the dialog has been renamed to **Input Schema** and con
 
 ## Files Affected
 
-| File | Change |
-|---|---|
-| `frontend/src/components/JsonSchemaEditor.tsx` | New component, adapted from pixie-ui. Wraps `@uiw/react-codemirror` for JSON mode editing with live validation and a Prettify button. |
-| `frontend/src/components/JsonSchemaEditor.test.tsx` | New test file covering rendering, change callbacks, JSON validation, and Prettify. |
-| `frontend/src/components/TestSuiteConfigDialog.tsx` | Replaced "Dataset" section with tabbed "Input Schema" section. Added `inputSchemaTab`, `directInputSchema`, `directInputSchemaValid` state. Added `handleCreateDirect` for direct mutation path. Updated disabled logic for the Create button. |
-| `frontend/src/components/TestSuiteConfigDialog.test.tsx` | Updated "Input Schema" assertion to `getAllByText` to handle multiple occurrences. |
-| `frontend/package.json` | Added `@uiw/react-codemirror`, `@codemirror/language`, `@codemirror/lint`, `@codemirror/state`, `@lezer/highlight`. |
+| File                                                     | Change                                                                                                                                                                                                                                         |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend/src/components/JsonSchemaEditor.tsx`           | New component, adapted from pixie-ui. Wraps `@uiw/react-codemirror` for JSON mode editing with live validation and a Prettify button.                                                                                                          |
+| `frontend/src/components/JsonSchemaEditor.test.tsx`      | New test file covering rendering, change callbacks, JSON validation, and Prettify.                                                                                                                                                             |
+| `frontend/src/components/TestSuiteConfigDialog.tsx`      | Replaced "Dataset" section with tabbed "Input Schema" section. Added `inputSchemaTab`, `directInputSchema`, `directInputSchemaValid` state. Added `handleCreateDirect` for direct mutation path. Updated disabled logic for the Create button. |
+| `frontend/src/components/TestSuiteConfigDialog.test.tsx` | Updated "Input Schema" assertion to `getAllByText` to handle multiple occurrences.                                                                                                                                                             |
+| `frontend/package.json`                                  | Added `@uiw/react-codemirror`, `@codemirror/language`, `@codemirror/lint`, `@codemirror/state`, `@lezer/highlight`.                                                                                                                            |
 
 ## Migration Notes
 

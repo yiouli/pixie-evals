@@ -27,37 +27,44 @@ vi.mock("../hooks/useTestSuites", () => ({
 }));
 
 // Mock Apollo hooks
-const mockLinkMutate = vi.fn<() => Promise<{ data: null }>>().mockResolvedValue({ data: null });
+const mockLinkMutate = vi
+  .fn<() => Promise<{ data: null }>>()
+  .mockResolvedValue({ data: null });
 
 vi.mock("@apollo/client", () => ({
-  useQuery: vi.fn((_query: unknown, options?: { variables?: { id?: string }; skip?: boolean }) => {
-    // If skip is true, return empty
-    if (options?.skip) return { data: undefined, loading: false };
-    // Return mock dataset data with schema
-    return {
-      data: {
-        getDataset: {
-          id: options?.variables?.id ?? "ds-1",
-          fileName: "test-data.csv",
-          rowSchema: {
-            type: "object",
-            properties: {
-              question: { type: "string", description: "The question" },
-              answer: { type: "string", description: "The answer" },
-              context: {
-                type: "object",
-                properties: {
-                  source: { type: "string" },
+  useQuery: vi.fn(
+    (
+      _query: unknown,
+      options?: { variables?: { id?: string }; skip?: boolean },
+    ) => {
+      // If skip is true, return empty
+      if (options?.skip) return { data: undefined, loading: false };
+      // Return mock dataset data with schema
+      return {
+        data: {
+          getDataset: {
+            id: options?.variables?.id ?? "ds-1",
+            fileName: "test-data.csv",
+            rowSchema: {
+              type: "object",
+              properties: {
+                question: { type: "string", description: "The question" },
+                answer: { type: "string", description: "The answer" },
+                context: {
+                  type: "object",
+                  properties: {
+                    source: { type: "string" },
+                  },
                 },
               },
             },
           },
+          getDataEntries: [],
         },
-        getDataEntries: [],
-      },
-      loading: false,
-    };
-  }),
+        loading: false,
+      };
+    },
+  ),
   useMutation: () => [mockLinkMutate, { loading: false }],
   useSubscription: () => ({ error: undefined }),
   gql: (strings: TemplateStringsArray) => strings.join(""),
@@ -66,7 +73,11 @@ vi.mock("@apollo/client", () => ({
 // Mock remoteClient
 vi.mock("../lib/apolloClient", () => ({
   sdkClient: {},
-  remoteClient: { mutate: vi.fn().mockResolvedValue({ data: { createDataAdaptor: "adaptor-1" } }) },
+  remoteClient: {
+    mutate: vi
+      .fn()
+      .mockResolvedValue({ data: { createDataAdaptor: "adaptor-1" } }),
+  },
 }));
 
 // Mock child components that are complex
@@ -114,7 +125,9 @@ describe("TestSuiteConfigDialog", () => {
       </TestWrapper>,
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Create Evaluation" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Create Evaluation" }),
+    ).toBeInTheDocument();
   });
 
   it("should not render when closed", () => {
@@ -183,7 +196,9 @@ describe("TestSuiteConfigDialog", () => {
       </TestWrapper>,
     );
     // "Input Schema" appears as the section heading; there may also be a sub-label
-    expect(screen.getAllByText("Input Schema").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Input Schema").length).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
   it("should disable create button when adaptor is enabled but no fields added", async () => {
@@ -211,7 +226,9 @@ describe("TestSuiteConfigDialog", () => {
     fireEvent.click(checkbox);
 
     // Create button should be disabled because no adaptor fields
-    const createBtn = screen.getByRole("button", { name: /create evaluation/i });
+    const createBtn = screen.getByRole("button", {
+      name: /create evaluation/i,
+    });
     expect(createBtn).toBeDisabled();
   });
 
