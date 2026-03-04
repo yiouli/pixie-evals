@@ -182,7 +182,8 @@ describe("TestSuiteConfigDialog", () => {
         />
       </TestWrapper>,
     );
-    expect(screen.getByText("Input Schema")).toBeInTheDocument();
+    // "Input Schema" appears as the section heading; there may also be a sub-label
+    expect(screen.getAllByText("Input Schema").length).toBeGreaterThanOrEqual(1);
   });
 
   it("should disable create button when adaptor is enabled but no fields added", async () => {

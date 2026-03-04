@@ -19,6 +19,8 @@ import {
   Paper,
   LinearProgress,
   Alert,
+  Tab,
+  Tabs,
 } from "@mui/material";
 import { useQuery, useMutation, useSubscription } from "@apollo/client";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
@@ -26,11 +28,12 @@ import { sdkClient, remoteClient } from "../lib/apolloClient";
 import { GET_DATASET, GET_DATA_ENTRIES } from "../graphql/sdk/query";
 import { LINK_DATASET_TO_TEST_SUITE } from "../graphql/sdk/mutation";
 import { CREATE_TEST_SUITE_PROGRESS } from "../graphql/sdk/subscription";
-import { CREATE_DATA_ADAPTOR } from "../graphql/remote/mutation";
+import { CREATE_DATA_ADAPTOR, CREATE_TEST_SUITE } from "../graphql/remote/mutation";
 import { CreationStatus } from "../generated/sdk/graphql";
 import { DatasetUploadDialog } from "./DatasetUploadDialog";
 import { MetricsAutocomplete } from "./MetricsAutocomplete";
 import { DataAdaptorEditor } from "./DataAdaptorEditor";
+import { JsonSchemaEditor } from "./JsonSchemaEditor";
 import { useDatasets } from "../hooks/useDatasets";
 import { useTestSuites } from "../hooks/useTestSuites";
 import { computeOutputSchema, type AdaptorField } from "../lib/schemaUtils";
@@ -66,6 +69,12 @@ export function TestSuiteConfigDialog({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // "Input Schema" tab: "from-dataset" uses the subscription pipeline;
+  // "configure" uses direct JSON schema input + remote createTestSuite mutation.
+  const [inputSchemaTab, setInputSchemaTab] = useState<"from-dataset" | "configure">("from-dataset");
+  const [directInputSchema, setDirectInputSchema] = useState<unknown>(null);
+  const [directInputSchemaValid, setDirectInputSchemaValid] = useState(false);
+
   // Subscription progress state
   const [creationMessage, setCreationMessage] = useState("");
   const [creationProgress, setCreationProgress] = useState(0);
@@ -91,6 +100,9 @@ export function TestSuiteConfigDialog({
   const { refetch: refetchTestSuites } = useTestSuites();
   const [linkMutation] = useMutation(LINK_DATASET_TO_TEST_SUITE, {
     client: sdkClient,
+  });
+  const [createTestSuiteMutation] = useMutation(CREATE_TEST_SUITE, {
+    client: remoteClient,
   });
 
   // Fetch selected dataset details
@@ -262,7 +274,7 @@ export function TestSuiteConfigDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creationStatus, createdTestSuiteId]);
 
-  /** Start the subscription-based creation pipeline. */
+  /** Start creation via the SDK subscription pipeline (from-dataset tab). */
   const handleCreate = () => {
     if (!selectedDatasetId) return;
     const metricIds = selectedMetrics.map((m) => m.id as string);
@@ -285,6 +297,43 @@ export function TestSuiteConfigDialog({
     setCreating(true);
   };
 
+  /** Create directly via remote createTestSuite mutation (configure tab). */
+  const handleCreateDirect = async () => {
+    const metricIds = selectedMetrics.map((m) => m.id as string);
+
+    setCreationMessage("Creating evaluation...");
+    setCreationProgress(0);
+    setCreationStatus(null);
+    setCreatedTestSuiteId(null);
+    postCreationDoneRef.current = false;
+    setCreating(true);
+
+    try {
+      const result = await createTestSuiteMutation({
+        variables: {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          metricIds,
+          config: { inputSchema: directInputSchema },
+        },
+      });
+      const newId = result.data?.createTestSuite as string | undefined;
+      if (!newId) throw new Error("No test suite ID returned");
+
+      setCreatedTestSuiteId(newId);
+      setCreationStatus(CreationStatus.Complete);
+      setCreationMessage("Evaluation created successfully!");
+      setCreationProgress(100);
+
+      await refetchTestSuites();
+      onSuccess?.(newId);
+    } catch (e: unknown) {
+      setCreationStatus(CreationStatus.Error);
+      setCreationMessage(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      setCreationProgress(0);
+    }
+  };
+
   const handleClose = () => {
     if (isRunning) return;
     setName("");
@@ -301,6 +350,9 @@ export function TestSuiteConfigDialog({
     setCreatedTestSuiteId(null);
     setSubscriptionInput(null);
     postCreationDoneRef.current = false;
+    setInputSchemaTab("from-dataset");
+    setDirectInputSchema(null);
+    setDirectInputSchemaValid(false);
     onClose();
   };
 
@@ -381,129 +433,156 @@ export function TestSuiteConfigDialog({
 
           <Divider sx={{ my: 2 }} />
 
-          {/* Dataset selection */}
+          {/* Input Schema — two tabs: "From dataset" or "Configure directly" */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-              Dataset
+              Input Schema
             </Typography>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                <InputLabel>Select Dataset</InputLabel>
-                <Select
-                  value={selectedDatasetId ?? ""}
-                  onChange={(e) =>
-                    setSelectedDatasetId(e.target.value || null)
-                  }
-                  label="Select Dataset"
-                >
-                  {datasets.map((ds) => (
-                    <MenuItem key={ds.id} value={ds.id}>
-                      {ds.fileName}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Typography variant="body2" color="text.secondary">
-                or
-              </Typography>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setUploadDialogOpen(true)}
-              >
-                Upload New
-              </Button>
-            </Stack>
-          </Box>
+            <Tabs
+              value={inputSchemaTab}
+              onChange={(_e, v: "from-dataset" | "configure") => setInputSchemaTab(v)}
+              sx={{ mb: 2 }}
+            >
+              <Tab label="From dataset" value="from-dataset" />
+              <Tab label="Configure" value="configure" />
+            </Tabs>
 
-          {/* Dataset preview and adaptor config (shown when dataset selected) */}
-          {selectedDatasetId && (
-            <Box sx={{ mt: 3 }}>
-              <Divider sx={{ mb: 2 }} />
-
-              {/* Data Adaptor toggle and editor */}
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={adaptorEnabled}
-                    onChange={(e) => setAdaptorEnabled(e.target.checked)}
-                  />
-                }
-                label="Configure Data Adaptor"
-                sx={{ mb: 1 }}
-              />
-
-              {adaptorEnabled && Object.keys(parsedInputSchema).length > 0 && (
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 2, mb: 2, borderRadius: 2 }}
-                >
-                  <DataAdaptorEditor
-                    inputSchema={parsedInputSchema}
-                    fields={adaptorFields}
-                    onChange={setAdaptorFields}
-                    name={adaptorName}
-                    onNameChange={setAdaptorName}
-                  />
-                </Paper>
-              )}
-
-              {/* Effective Input Schema */}
-              {effectiveSchemaDisplay && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ fontWeight: 600, mb: 1 }}
-                  >
-                    {adaptorEnabled && adaptorOutputSchema
-                      ? "Transformed Input Schema"
-                      : "Input Schema"}
-                  </Typography>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      bgcolor: "grey.50",
-                      maxHeight: 200,
-                      overflow: "auto",
-                    }}
-                  >
-                    <Box
-                      component="pre"
-                      sx={{
-                        m: 0,
-                        fontSize: "0.8rem",
-                        fontFamily: "monospace",
-                      }}
+            {inputSchemaTab === "from-dataset" && (
+              <>
+                {/* Dataset selection */}
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                    <InputLabel>Select Dataset</InputLabel>
+                    <Select
+                      value={selectedDatasetId ?? ""}
+                      onChange={(e) =>
+                        setSelectedDatasetId(e.target.value || null)
+                      }
+                      label="Select Dataset"
                     >
-                      {effectiveSchemaDisplay}
-                    </Box>
-                  </Paper>
-                </Box>
-              )}
+                      {datasets.map((ds) => (
+                        <MenuItem key={ds.id} value={ds.id}>
+                          {ds.fileName}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Typography variant="body2" color="text.secondary">
+                    or
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => setUploadDialogOpen(true)}
+                  >
+                    Upload New
+                  </Button>
+                </Stack>
 
-              <Typography
-                variant="subtitle2"
-                sx={{ fontWeight: 600, mb: 1 }}
-              >
-                Test Cases Preview
-              </Typography>
-              <Box sx={{ height: 300 }}>
-                <DataGrid
-                  rows={previewRows}
-                  columns={previewColumns}
-                  loading={entriesLoading}
-                  initialState={{
-                    pagination: { paginationModel: { pageSize: 10 } },
-                  }}
-                  pageSizeOptions={[10]}
-                  disableRowSelectionOnClick
-                  density="compact"
-                />
-              </Box>
-            </Box>
-          )}
+                {/* Dataset preview and adaptor config (shown when dataset selected) */}
+                {selectedDatasetId && (
+                  <Box sx={{ mt: 3 }}>
+                    <Divider sx={{ mb: 2 }} />
+
+                    {/* Data Adaptor toggle and editor */}
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={adaptorEnabled}
+                          onChange={(e) => setAdaptorEnabled(e.target.checked)}
+                        />
+                      }
+                      label="Configure Data Adaptor"
+                      sx={{ mb: 1 }}
+                    />
+
+                    {adaptorEnabled && Object.keys(parsedInputSchema).length > 0 && (
+                      <Paper
+                        variant="outlined"
+                        sx={{ p: 2, mb: 2, borderRadius: 2 }}
+                      >
+                        <DataAdaptorEditor
+                          inputSchema={parsedInputSchema}
+                          fields={adaptorFields}
+                          onChange={setAdaptorFields}
+                          name={adaptorName}
+                          onNameChange={setAdaptorName}
+                        />
+                      </Paper>
+                    )}
+
+                    {/* Effective Input Schema */}
+                    {effectiveSchemaDisplay && (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ fontWeight: 600, mb: 1 }}
+                        >
+                          {adaptorEnabled && adaptorOutputSchema
+                            ? "Transformed Input Schema"
+                            : "Input Schema"}
+                        </Typography>
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            p: 2,
+                            borderRadius: 2,
+                            bgcolor: "grey.50",
+                            maxHeight: 200,
+                            overflow: "auto",
+                          }}
+                        >
+                          <Box
+                            component="pre"
+                            sx={{
+                              m: 0,
+                              fontSize: "0.8rem",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {effectiveSchemaDisplay}
+                          </Box>
+                        </Paper>
+                      </Box>
+                    )}
+
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 600, mb: 1 }}
+                    >
+                      Test Cases Preview
+                    </Typography>
+                    <Box sx={{ height: 300 }}>
+                      <DataGrid
+                        rows={previewRows}
+                        columns={previewColumns}
+                        loading={entriesLoading}
+                        initialState={{
+                          pagination: { paginationModel: { pageSize: 10 } },
+                        }}
+                        pageSizeOptions={[10]}
+                        disableRowSelectionOnClick
+                        density="compact"
+                      />
+                    </Box>
+                  </Box>
+                )}
+              </>
+            )}
+
+            {inputSchemaTab === "configure" && (
+              <JsonSchemaEditor
+                onChange={({ parsed, raw: _raw }) => {
+                  setDirectInputSchema(parsed);
+                  setDirectInputSchemaValid(
+                    parsed !== null &&
+                      typeof parsed === "object" &&
+                      !Array.isArray(parsed),
+                  );
+                }}
+              />
+            )}
+          </Box>
           </>
           )}
         </DialogContent>
@@ -527,16 +606,18 @@ export function TestSuiteConfigDialog({
               <Button onClick={handleClose}>Cancel</Button>
               <Button
                 variant="contained"
-                onClick={handleCreate}
+                onClick={inputSchemaTab === "from-dataset" ? handleCreate : handleCreateDirect}
                 disabled={
                   !name.trim() ||
-                  !selectedDatasetId ||
                   selectedMetrics.length === 0 ||
-                  (adaptorEnabled &&
-                    (!adaptorName.trim() ||
-                      !adaptorFields.some(
-                        (f) => f.schemaPath && f.name.trim(),
-                      )))
+                  (inputSchemaTab === "from-dataset"
+                    ? !selectedDatasetId ||
+                      (adaptorEnabled &&
+                        (!adaptorName.trim() ||
+                          !adaptorFields.some(
+                            (f) => f.schemaPath && f.name.trim(),
+                          )))
+                    : !directInputSchemaValid)
                 }
               >
                 Create Evaluation
