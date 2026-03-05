@@ -22,69 +22,168 @@ This applies to all external data sources: remote GraphQL servers, databases, fi
 
 ### Red Flags That Signal Over-Engineering
 
-| Red Flag | Ask Yourself |
-|---|---|
-| Adding a new resolution/conversion step | Can the existing path work if I fix the actual bug? |
-| Changing what the frontend passes (UUID → name, etc.) | Is the current contract fine if the backend works correctly? |
-| Adding `encodeURIComponent` or string transforms | Am I working around a mismatch I introduced? |
-| Creating utility functions for one use site | Is this premature abstraction? |
-| "The frontend should prefer X because Y" | Or should the backend just work with what it already receives? |
+| Red Flag                                              | Ask Yourself                                                   |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| Adding a new resolution/conversion step               | Can the existing path work if I fix the actual bug?            |
+| Changing what the frontend passes (UUID → name, etc.) | Is the current contract fine if the backend works correctly?   |
+| Adding `encodeURIComponent` or string transforms      | Am I working around a mismatch I introduced?                   |
+| Creating utility functions for one use site           | Is this premature abstraction?                                 |
+| "The frontend should prefer X because Y"              | Or should the backend just work with what it already receives? |
 
 ### The Simplicity Test
 
 Before committing a fix, verify:
+
 - **Could this change be smaller?** If yes, make it smaller.
 - **Does this change the API contract?** If yes, is that strictly necessary?
 - **Would a senior engineer look at this diff and ask "why didn't you just..."?** If yes, do the simpler thing.
 
 ## CRITICAL: End-to-End Verification for Cross-Boundary Changes
 
-**When a change spans both frontend and backend, unit tests alone are NOT sufficient.** You must also verify the integration works end-to-end.
+**When a change spans both frontend and backend, unit tests alone are NOT sufficient.** True E2E verification means exercising the full stack from the web browser — not just hitting API endpoints with `curl`.
 
 ### After any cross-boundary change:
 
-1. **Start the SDK server** (`make dev-sdk` or `cd sdk && uv run python -m pixie_sdk.server`)
-2. **Hit the actual endpoint** with `curl` or a browser to confirm the full request/response cycle works
-3. **Verify with real data** — not just mock data in unit tests
-4. **If the server can't start** (missing deps, port conflict), fix it before declaring the change complete
+1. **Start all required servers** (`make dev-sdk`, `make dev-frontend`, and the remote pixie-server if needed)
+2. **Verify API health** with `curl` as a quick sanity check
+3. **Run a browser E2E test** using `playwright-cli` to confirm the UI actually works end-to-end
+4. **If any server can't start** (missing deps, port conflict), fix it before declaring the change complete
 
-### Why this matters
+### Why `curl` alone is not enough
 
-Mocked unit tests can pass while the real integration is broken. This is especially true for:
-- URL routing (frontend constructs URL, server parses it)
-- Data serialization (frontend sends JSON, server deserializes it)
-- File-path conventions (scaffold creates files, server discovers them)
-- **Authentication and authorization** — mocked tests skip auth entirely, but real servers require tokens
+`curl` tests the API in isolation. It cannot catch:
 
-A 5-second `curl` request catches bugs that 100 unit tests miss.
+- React rendering errors or blank screens
+- Apollo Client query/mutation wiring bugs
+- Auth token not being passed from the UI
+- MUI component errors that crash the page
+- Navigation or routing issues in the SPA
+- Subscription data not appearing in the UI
+
+A 30-second playwright-cli browser run catches bugs that `curl` and 100 unit tests miss.
 
 ### Common Pitfalls That Require E2E Verification
 
-| Pitfall | Mocked Test Result | Real Behaviour |
-|---|---|---|
-| Remote server requires auth token | ✅ Mock returns data | ❌ `RuntimeError: Authentication required` |
-| Frontend URL-encodes path params | ✅ Mock never parses URL | ❌ Server receives `%20` instead of space |
-| Exception silently caught in `except Exception` | ✅ Test mocks the happy path | ❌ Error swallowed, returns None/404 |
-| HTML file doesn't exist on disk | ✅ Mock returns file content | ❌ `FileNotFoundError` |
+| Pitfall                                            | Mocked Test Result                      | Real Behaviour                                 |
+| -------------------------------------------------- | --------------------------------------- | ---------------------------------------------- |
+| Remote server requires auth token                  | ✅ Mock returns data                    | ❌ `RuntimeError: Authentication required`     |
+| Frontend URL-encodes path params                   | ✅ Mock never parses URL                | ❌ Server receives `%20` instead of space      |
+| Exception silently caught in `except Exception`    | ✅ Test mocks the happy path            | ❌ Error swallowed, returns None/404           |
+| HTML file doesn't exist on disk                    | ✅ Mock returns file content            | ❌ `FileNotFoundError`                         |
+| WebSocket context getter requires HTTP-only params | ✅ Tests mock auth directly             | ❌ `TypeError: get_context() missing argument` |
+| Subscription connects but immediately closes       | ✅ Mock `useSubscription` returns data  | ❌ Server rejects WS handshake                 |
+| Apollo Client misconfigured                        | ✅ Mock skips the client entirely       | ❌ UI shows blank / error state                |
+| React component throws on real data shape          | ✅ Mock data matches hand-written types | ❌ White screen of death                       |
 
 ### Mandatory Verification Steps
 
-**Never declare a cross-boundary change complete without these steps:**
+**Never declare a cross-boundary change complete without all three steps:**
+
+#### Step 1 — API health check (quick sanity)
 
 ```bash
-# 1. Kill old server, start fresh
-lsof -ti:8100 | xargs -r kill -9
-cd sdk && uv run uvicorn pixie_sdk.server:app --port 8100 &
+# Verify the SDK server endpoint the frontend will hit
+curl -s http://localhost:8100/graphql -d '{"query":"{__typename}"}' -H 'Content-Type: application/json'
+# Expected: {"data":{"__typename":"Query"}}
 
-# 2. Verify the exact endpoint the frontend will hit
-curl -s http://localhost:8100/<your-endpoint>
-# Expected: the correct response (NOT a 404, 500, or auth error)
-
-# 3. Check server logs for silent errors
-# Look for WARNING, ERROR, or traceback in server output
+# Check server logs for silent errors — look for WARNING, ERROR, or traceback
 ```
 
-If `curl` returns an error, **the bug is not fixed** — regardless of how many unit tests pass.
+If `curl` returns an error, fix the backend before proceeding to browser testing.
+
+#### Step 2 — Browser E2E with playwright-cli
+
+This is the **true E2E gate**. Use `playwright-cli` to drive a real browser through the affected user flow:
+
+```bash
+# Open the running frontend (default Vite dev server port)
+playwright-cli open http://localhost:5173
+
+# Take a snapshot to see the current page state
+playwright-cli snapshot
+
+# Interact with the UI to exercise the changed feature, e.g.:
+playwright-cli click e5          # click a button (use ref from snapshot)
+playwriter-cli fill e8 "value"   # fill an input
+playwright-cli snapshot          # verify the result
+
+# Check browser console for errors
+playwright-cli console
+
+# Check network requests for failed API calls
+playwright-cli network
+
+playwright-cli close
+```
+
+**Workflow for testing a specific feature change:**
+
+1. `playwright-cli open http://localhost:5173` — open the app
+2. `playwright-cli snapshot` — identify page elements and their refs
+3. Navigate/interact to reach the changed feature
+4. `playwright-cli snapshot` — verify the UI renders correctly with real data
+5. `playwright-cli console` — confirm zero JS errors
+6. `playwright-cli network` — confirm no failed API requests
+7. `playwright-cli close`
+
+**The change is NOT complete until the browser shows the correct UI with no console errors.**
+
+#### Step 3 — Check server logs
+
+After the browser run, review server terminal output for any tracebacks, warnings, or unhandled exceptions that were triggered by the browser interaction.
+
+### CRITICAL: WebSocket / Subscription E2E Verification
+
+**When implementing GraphQL subscriptions or any WebSocket-based feature, HTTP testing (curl, schema introspection) is NOT sufficient.** WebSocket connections use a completely different code path than HTTP requests. A server can handle HTTP GraphQL queries perfectly while crashing on every WebSocket connection.
+
+#### Why HTTP tests miss WebSocket bugs
+
+- **FastAPI dependency injection differs**: `Request`, `BackgroundTasks`, and other deps injected for HTTP routes may not be available for WebSocket routes. Making context-getter params optional can break FastAPI's route registration (e.g., `Request | None` is not a valid Pydantic field type).
+- **Auth flows differ**: HTTP sends auth via `Authorization` header. WebSocket sends auth via `connectionParams` in the `connection_init` message. Testing one does not validate the other.
+- **Strawberry wraps context differently**: Strawberry's `GraphQLRouter` uses FastAPI DI for HTTP but a separate dependency chain for WebSocket. Your context getter must work for both.
+
+#### Mandatory WebSocket Verification Script
+
+After ANY change to:
+
+- The GraphQL context getter (`get_context` in `server.py`)
+- Authentication logic (`require_auth` in `graphql.py`)
+- Any subscription resolver
+- Apollo Client WebSocket link configuration
+
+Run this **actual WebSocket connection test**:
+
+```python
+# test_ws_connection.py — run with: python test_ws_connection.py
+import asyncio
+import json
+import websockets
+
+async def test_ws():
+    uri = "ws://localhost:8000/graphql"  # or :8100 for SDK server
+    async with websockets.connect(uri, subprotocols=["graphql-transport-ws"]) as ws:
+        # 1. Send connection_init (graphql-ws protocol handshake)
+        await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
+        # 2. Wait for connection_ack
+        response = await asyncio.wait_for(ws.recv(), timeout=5)
+        msg = json.loads(response)
+        assert msg["type"] == "connection_ack", f"Expected connection_ack, got: {msg}"
+        print("SUCCESS: WebSocket connection established!")
+
+asyncio.run(test_ws())
+```
+
+**If this script fails, the subscription feature is broken** — regardless of how many unit tests pass or how clean the HTTP introspection looks.
+
+#### What each verification level proves
+
+| Verification                            | What it proves                           | What it does NOT prove             |
+| --------------------------------------- | ---------------------------------------- | ---------------------------------- |
+| `curl -d '{"query":"{__typename}"}'`    | HTTP GraphQL route is registered         | WebSocket route works; UI works    |
+| Schema introspection shows subscription | Schema is correctly defined              | Server can handle WS connections   |
+| `useSubscription` mock test passes      | Component handles data correctly         | Server actually sends data over WS |
+| **WebSocket handshake test (above)**    | **Server accepts WS connections**        | Auth works, data flows end-to-end  |
+| **`playwright-cli` browser test**       | **Full stack E2E works in real browser** | —                                  |
 
 ## Project Overview
 
@@ -93,10 +192,12 @@ pixie-evals is an evaluation platform with a Python SDK backend and a React/Type
 ## Technology Stack
 
 ### Backend (SDK)
+
 - **Python 3.11+** with type hints
 - **pytest** for testing
 
 ### Frontend
+
 - **TypeScript** with strict mode
 - **React 19** with functional components
 - **Vite** for build/dev server
@@ -167,6 +268,7 @@ frontend/
 All UI must be built with MUI components. **Never use raw HTML elements** when an MUI equivalent exists.
 
 **❌ WRONG**:
+
 ```tsx
 <div style={{ display: "flex", gap: 8 }}>
   <button onClick={handleClick}>Submit</button>
@@ -175,6 +277,7 @@ All UI must be built with MUI components. **Never use raw HTML elements** when a
 ```
 
 **✅ CORRECT**:
+
 ```tsx
 <Box sx={{ display: "flex", gap: 1 }}>
   <Button onClick={handleClick}>Submit</Button>
@@ -198,6 +301,7 @@ Use MUI's `sx` prop for all styling. Do not use CSS files, CSS modules, or `styl
 ```
 
 Use theme spacing units (numbers) in `sx` for consistent spacing:
+
 ```tsx
 <Stack spacing={2} sx={{ p: 3, mt: 4 }}>
 ```
@@ -279,13 +383,19 @@ Operations are defined in **TypeScript files** under `graphql/` using the `graph
 **NEVER define GraphQL operations inline in hooks or components.** All operations MUST be defined in the centralized `.ts` files under `graphql/remote/` or `graphql/sdk/` using the `graphql()` function.
 
 **❌ WRONG** — inline `gql` tagged template:
+
 ```tsx
 // In a hook or component — NEVER DO THIS
 import { gql, useQuery } from "@apollo/client";
 
 const LIST_DATASETS = gql`
   query ListDatasets {
-    listDatasets { id fileName createdAt rowSchema }
+    listDatasets {
+      id
+      fileName
+      createdAt
+      rowSchema
+    }
   }
 `;
 
@@ -293,6 +403,7 @@ const { data } = useQuery(LIST_DATASETS, { client: sdkClient });
 ```
 
 **✅ CORRECT** — define in `graphql/sdk/query.ts`, use in hooks/components:
+
 ```tsx
 // 1. In graphql/sdk/query.ts:
 import { graphql } from "../../generated/sdk/gql";
@@ -322,6 +433,7 @@ const { data } = useQuery(LIST_DATASETS, { client: sdkClient });
 **NEVER manually define TypeScript types/interfaces that mirror GraphQL schema types.** All GraphQL-derived types come from `generated/`.
 
 **❌ WRONG** — hand-written types duplicating the schema:
+
 ```tsx
 interface Dataset {
   id: string;
@@ -332,6 +444,7 @@ interface Dataset {
 ```
 
 **✅ CORRECT** — derive types from generated code:
+
 ```tsx
 import type {
   ListDatasetsQuery,
@@ -358,6 +471,7 @@ Before starting any server, read the relevant README to find the correct startup
 ##### Step 2 — Start the required servers
 
 The codegen config (`frontend/codegen.ts`) introspects:
+
 - `http://localhost:8000/graphql` → remote pixie-server schema (generates `src/generated/remote/`)
 - `http://localhost:8100/graphql` → local SDK server schema (generates `src/generated/sdk/`)
 
@@ -409,7 +523,7 @@ This regenerates all files under `frontend/src/generated/` and `sdk/pixie_sdk/re
 
 - **Import the named constant** (e.g., `LIST_DATASETS`) in your hook/component.
 - **Never import `gql` from `@apollo/client`** for defining operations — only use the generated `graphql()` function.
-- Derive TypeScript types from the generated output (see *No Hand-Written Types* section above).
+- Derive TypeScript types from the generated output (see _No Hand-Written Types_ section above).
 
 ##### Step 7 — Verify and commit
 
@@ -442,17 +556,20 @@ export interface TestSuiteInfo {
 - Use **narrow selectors** — subscribe only to the exact data needed.
 
 **❌ WRONG**:
+
 ```tsx
-const store = useAuthStore();      // subscribes to entire store
+const store = useAuthStore(); // subscribes to entire store
 ```
 
 **✅ CORRECT**:
+
 ```tsx
 const token = useAuthStore((state) => state.token);
 const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 ```
 
 - Use `useShallow` for object/array selectors to prevent unnecessary re-renders:
+
 ```tsx
 import { useShallow } from "zustand/shallow";
 const config = useStore(useShallow((state) => state.config));
@@ -676,6 +793,7 @@ describe("MyComponent", () => {
 **The rule: When the backend already owns a piece of logic, the frontend must NOT re-implement it. Instead, pass the raw identifier to the backend and let the backend resolve it.**
 
 **❌ WRONG** — duplicating name-to-slug conversion in both Python and TypeScript:
+
 ```python
 # Backend (Python) — scaffold.py
 def to_snake_case(name: str) -> str:
@@ -683,6 +801,7 @@ def to_snake_case(name: str) -> str:
     slug = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", slug)
     return slug.strip("_").lower()
 ```
+
 ```typescript
 // Frontend (TypeScript) — stringUtils.ts — DUPLICATED!
 export function toSnakeCase(name: string): string {
@@ -693,10 +812,12 @@ export function toSnakeCase(name: string): string {
 ```
 
 **✅ CORRECT** — frontend passes the UUID, backend resolves it:
+
 ```typescript
 // Frontend — just pass the test suite ID, no conversion needed
 <iframe src={`${SDK_BASE_URL}/labeling/${testSuiteId}?id=${entryId}`} />
 ```
+
 ```python
 # Backend — server.py resolves UUID → name → slug using the SAME function
 component = get_component(component_name)  # direct slot lookup
@@ -707,6 +828,7 @@ if component is None and _is_uuid(component_name):
 ```
 
 **When you identify a need for conversion/transformation logic:**
+
 1. **Ask: does the backend already do this?** If yes, make the backend expose it (via an API route, a resolver, or by accepting the raw input and converting internally).
 2. **Never port Python logic to TypeScript** (or vice versa) just because "it's simpler" — it creates a maintenance trap.
 3. **If genuinely needed on both sides** (rare), extract it as a shared spec with cross-language tests that verify identical output for a canonical set of inputs.
@@ -716,6 +838,7 @@ if component is None and _is_uuid(component_name):
 **The same UI element rendered in different contexts must use the same base component.** When two places render the same visual element (e.g., a file upload widget inside a dialog vs. embedded in a page), extract a shared component and use it in both places.
 
 **❌ WRONG** — duplicating upload UI:
+
 ```tsx
 // InsideDialog.tsx
 function UploadForm() {
@@ -729,6 +852,7 @@ function UploadArea() {
 ```
 
 **✅ CORRECT** — single shared component:
+
 ```tsx
 // components/DatasetUploadForm.tsx — one source of truth
 export function DatasetUploadForm({ onSuccess }: DatasetUploadFormProps) { ... }
@@ -743,6 +867,7 @@ export function DatasetUploadForm({ onSuccess }: DatasetUploadFormProps) { ... }
 **Hooks that share logic must extract the shared part.** If `useHookA` does steps X + Y, and `useHookB` does steps X + Z, extract step X into its own hook or pure function and call it from both. Never copy-paste the implementation of X.
 
 **❌ WRONG** — duplicated logic in two hooks:
+
 ```typescript
 // useDatasetUpload.ts
 export function useDatasetUpload() {
@@ -760,6 +885,7 @@ export function useFetchDatasets() {
 ```
 
 **✅ CORRECT** — shared hook for common logic:
+
 ```typescript
 // hooks/useAuthHeaders.ts
 export function useAuthHeaders() {
@@ -823,7 +949,7 @@ export interface TestSuiteInfo {
   name: string;
   metrics: MetricConfig[];
   // ...
-};
+}
 ```
 
 **Use query/subscription result field types for sub-shapes** rather than redefining them:
@@ -842,12 +968,12 @@ Consistent button styling helps users immediately understand the weight and inte
 
 ### When to Use Each Style
 
-| Style | When to use | Example |
-|---|---|---|
-| `IconButton` + `Tooltip` | Compact toolbars; well-known universal actions where the icon alone is unambiguous | Pause, Stop, Resume, Close in a control bar |
-| `Button` with `startIcon` + label text | Primary/secondary page-level actions; actions whose purpose needs a label for clarity | "Manual Review", "Upload Dataset", "Run Evaluation" |
-| `Button` text-only (no icon) | Simple confirmations, navigation, or secondary dialog actions where an icon adds no clarity | "Cancel", "View Details" |
-| Icon-only `Button` (not `IconButton`) | Rare; small fixed-size buttons in dense UI where `IconButton` sizing is wrong | Custom rating buttons in tight inline rows |
+| Style                                  | When to use                                                                                 | Example                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `IconButton` + `Tooltip`               | Compact toolbars; well-known universal actions where the icon alone is unambiguous          | Pause, Stop, Resume, Close in a control bar         |
+| `Button` with `startIcon` + label text | Primary/secondary page-level actions; actions whose purpose needs a label for clarity       | "Manual Review", "Upload Dataset", "Run Evaluation" |
+| `Button` text-only (no icon)           | Simple confirmations, navigation, or secondary dialog actions where an icon adds no clarity | "Cancel", "View Details"                            |
+| Icon-only `Button` (not `IconButton`)  | Rare; small fixed-size buttons in dense UI where `IconButton` sizing is wrong               | Custom rating buttons in tight inline rows          |
 
 ### Icon-Only Buttons: Always Add a Tooltip
 
@@ -857,7 +983,12 @@ Every `IconButton` that performs an action **must** have a `Tooltip` with a desc
 // ✅ CORRECT
 <Tooltip title="Pause run">
   <span>
-    <IconButton aria-label="pause" onClick={handlePause} disabled={!canPause} color="primary">
+    <IconButton
+      aria-label="pause"
+      onClick={handlePause}
+      disabled={!canPause}
+      color="primary"
+    >
       <PauseRoundedIcon />
     </IconButton>
   </span>
@@ -869,6 +1000,7 @@ Wrap the `IconButton` in `<span>` when it may be `disabled`, so the `Tooltip` st
 ### When to Use Icon + Label
 
 Use `startIcon` + label text for any action that:
+
 - Appears on a page (not in a dense toolbar)
 - Has a non-obvious icon
 - Is a primary call-to-action
@@ -884,29 +1016,33 @@ Use `startIcon` + label text for any action that:
 
 Use variants to communicate the relative importance of actions:
 
-| Variant | Weight | Use for |
-|---|---|---|
+| Variant               | Weight                   | Use for                                                                        |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------ |
 | `variant="contained"` | Primary / most important | The single most important action on the current view; irreversible submissions |
-| `variant="outlined"` | Secondary | Alternative or supporting actions alongside a primary action |
-| `variant="text"` | Tertiary / low-key | Inline actions, "Cancel", links, supplementary options |
+| `variant="outlined"`  | Secondary                | Alternative or supporting actions alongside a primary action                   |
+| `variant="text"`      | Tertiary / low-key       | Inline actions, "Cancel", links, supplementary options                         |
 
 Avoid placing two `contained` buttons side by side — only one action should be primary.
 
 ### Color Semantics
 
-| `color` | Meaning | Use for |
-|---|---|---|
-| `"primary"` | Default / neutral action | Standard operations: pause, restart, navigate, confirm |
-| `"error"` | Destructive or exit | Delete, remove, close/exit a session, discard |
-| `"secondary"` | CTA / marketing emphasis | Sign-up prompts, "Star on GitHub", demo links |
-| `"success"` / `"warning"` / `"info"` | State-indicating inline | Rating buttons, status chips — sparingly and only when color carries direct meaning |
+| `color`                              | Meaning                  | Use for                                                                             |
+| ------------------------------------ | ------------------------ | ----------------------------------------------------------------------------------- |
+| `"primary"`                          | Default / neutral action | Standard operations: pause, restart, navigate, confirm                              |
+| `"error"`                            | Destructive or exit      | Delete, remove, close/exit a session, discard                                       |
+| `"secondary"`                        | CTA / marketing emphasis | Sign-up prompts, "Star on GitHub", demo links                                       |
+| `"success"` / `"warning"` / `"info"` | State-indicating inline  | Rating buttons, status chips — sparingly and only when color carries direct meaning |
 
 **❌ WRONG** — using `error` color for a non-destructive action:
+
 ```tsx
-<Button color="error" onClick={handleCancel}>Cancel</Button>
+<Button color="error" onClick={handleCancel}>
+  Cancel
+</Button>
 ```
 
 **✅ CORRECT**:
+
 ```tsx
 <Button variant="text" onClick={handleCancel}>Cancel</Button>
 <Button variant="contained" color="error" onClick={handleDelete}>Delete</Button>
@@ -1020,6 +1156,7 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
 Documentation drift happens when updates are deferred to "later" — later never comes. By treating documentation as part of the implementation (not a follow-up), the docs stay accurate and the next developer (or AI agent) working on the code has correct context.
 
 **Do NOT:**
+
 - Finish all code changes and then try to "batch update" documentation at the end
 - Skip documentation for "small" changes — small changes accumulate into large drift
 - Leave TODO comments promising to update docs later
