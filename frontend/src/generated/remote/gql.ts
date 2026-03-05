@@ -23,6 +23,8 @@ type Documents = {
     "\n  mutation RemoveTestCases($testSuiteId: UUID!, $testCaseIds: [UUID!]!) {\n    removeTestCases(testSuiteId: $testSuiteId, testCaseIds: $testCaseIds)\n  }\n": typeof types.RemoveTestCasesDocument,
     "\n  mutation SkipLabeling($testSuiteId: UUID!, $testCaseId: UUID!) {\n    skipLabeling(testSuiteId: $testSuiteId, testCaseId: $testCaseId)\n  }\n": typeof types.SkipLabelingDocument,
     "\n  mutation CreateDataAdaptor(\n    $name: String!\n    $testSuiteId: UUID!\n    $config: DataAdaptorConfigInput!\n    $description: String\n  ) {\n    createDataAdaptor(\n      name: $name\n      testSuiteId: $testSuiteId\n      config: $config\n      description: $description\n    )\n  }\n": typeof types.CreateDataAdaptorDocument,
+    "\n  mutation SendDatasetGenerationFeedback(\n    $sessionId: String!\n    $feedback: String!\n  ) {\n    sendDatasetGenerationFeedback(sessionId: $sessionId, feedback: $feedback)\n  }\n": typeof types.SendDatasetGenerationFeedbackDocument,
+    "\n  mutation AddTestCases(\n    $testSuiteId: UUID!\n    $testCases: [TestCaseWithLabelInput!]!\n  ) {\n    addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)\n  }\n": typeof types.AddTestCasesDocument,
     "\n  query ListMetrics {\n    listMetrics {\n      id\n      name\n      description\n      config\n      account\n    }\n  }\n": typeof types.ListMetricsDocument,
     "\n  query ListTestSuites {\n    listTestSuites {\n      id\n      name\n      description\n      account\n      creator\n      labelingUiTemplate\n      config\n    }\n  }\n": typeof types.ListTestSuitesDocument,
     "\n  query ListTestCaseIds($filters: TestCaseFiltersInput) {\n    listTestCaseIds(filters: $filters)\n  }\n": typeof types.ListTestCaseIdsDocument,
@@ -33,6 +35,7 @@ type Documents = {
     "\n  query GetEvaluatorWithSignature($testSuiteId: UUID!) {\n    getEvaluatorWithSignature(testSuiteId: $testSuiteId) {\n      inputSchema\n      outputSchema\n      savedProgram\n    }\n  }\n": typeof types.GetEvaluatorWithSignatureDocument,
     "\n  query GetOptimizationLabelStats($testSuiteId: UUID!) {\n    getOptimizationLabelStats(testSuiteId: $testSuiteId) {\n      beforeCutoff\n      afterCutoff\n      cutoffDate\n    }\n  }\n": typeof types.GetOptimizationLabelStatsDocument,
     "\n  query ListDataAdaptors($testSuiteId: UUID!) {\n    listDataAdaptors(testSuiteId: $testSuiteId) {\n      id\n      name\n      description\n      config\n      testSuite\n    }\n  }\n": typeof types.ListDataAdaptorsDocument,
+    "\n  subscription GenerateDataset(\n    $testSuiteId: UUID!\n    $size: Int!\n    $description: String!\n  ) {\n    generateDataset(\n      testSuiteId: $testSuiteId\n      size: $size\n      description: $description\n    ) {\n      status\n      message\n      progress\n      plan\n      generatedEntry\n      sessionId\n      total\n      completed\n    }\n  }\n": typeof types.GenerateDatasetDocument,
 };
 const documents: Documents = {
     "\n  mutation GetAuthToken($username: String!, $password: String!) {\n    getAuthToken(username: $username, password: $password) {\n      accessToken\n      tokenType\n    }\n  }\n": types.GetAuthTokenDocument,
@@ -44,6 +47,8 @@ const documents: Documents = {
     "\n  mutation RemoveTestCases($testSuiteId: UUID!, $testCaseIds: [UUID!]!) {\n    removeTestCases(testSuiteId: $testSuiteId, testCaseIds: $testCaseIds)\n  }\n": types.RemoveTestCasesDocument,
     "\n  mutation SkipLabeling($testSuiteId: UUID!, $testCaseId: UUID!) {\n    skipLabeling(testSuiteId: $testSuiteId, testCaseId: $testCaseId)\n  }\n": types.SkipLabelingDocument,
     "\n  mutation CreateDataAdaptor(\n    $name: String!\n    $testSuiteId: UUID!\n    $config: DataAdaptorConfigInput!\n    $description: String\n  ) {\n    createDataAdaptor(\n      name: $name\n      testSuiteId: $testSuiteId\n      config: $config\n      description: $description\n    )\n  }\n": types.CreateDataAdaptorDocument,
+    "\n  mutation SendDatasetGenerationFeedback(\n    $sessionId: String!\n    $feedback: String!\n  ) {\n    sendDatasetGenerationFeedback(sessionId: $sessionId, feedback: $feedback)\n  }\n": types.SendDatasetGenerationFeedbackDocument,
+    "\n  mutation AddTestCases(\n    $testSuiteId: UUID!\n    $testCases: [TestCaseWithLabelInput!]!\n  ) {\n    addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)\n  }\n": types.AddTestCasesDocument,
     "\n  query ListMetrics {\n    listMetrics {\n      id\n      name\n      description\n      config\n      account\n    }\n  }\n": types.ListMetricsDocument,
     "\n  query ListTestSuites {\n    listTestSuites {\n      id\n      name\n      description\n      account\n      creator\n      labelingUiTemplate\n      config\n    }\n  }\n": types.ListTestSuitesDocument,
     "\n  query ListTestCaseIds($filters: TestCaseFiltersInput) {\n    listTestCaseIds(filters: $filters)\n  }\n": types.ListTestCaseIdsDocument,
@@ -54,6 +59,7 @@ const documents: Documents = {
     "\n  query GetEvaluatorWithSignature($testSuiteId: UUID!) {\n    getEvaluatorWithSignature(testSuiteId: $testSuiteId) {\n      inputSchema\n      outputSchema\n      savedProgram\n    }\n  }\n": types.GetEvaluatorWithSignatureDocument,
     "\n  query GetOptimizationLabelStats($testSuiteId: UUID!) {\n    getOptimizationLabelStats(testSuiteId: $testSuiteId) {\n      beforeCutoff\n      afterCutoff\n      cutoffDate\n    }\n  }\n": types.GetOptimizationLabelStatsDocument,
     "\n  query ListDataAdaptors($testSuiteId: UUID!) {\n    listDataAdaptors(testSuiteId: $testSuiteId) {\n      id\n      name\n      description\n      config\n      testSuite\n    }\n  }\n": types.ListDataAdaptorsDocument,
+    "\n  subscription GenerateDataset(\n    $testSuiteId: UUID!\n    $size: Int!\n    $description: String!\n  ) {\n    generateDataset(\n      testSuiteId: $testSuiteId\n      size: $size\n      description: $description\n    ) {\n      status\n      message\n      progress\n      plan\n      generatedEntry\n      sessionId\n      total\n      completed\n    }\n  }\n": types.GenerateDatasetDocument,
 };
 
 /**
@@ -109,6 +115,14 @@ export function graphql(source: "\n  mutation CreateDataAdaptor(\n    $name: Str
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function graphql(source: "\n  mutation SendDatasetGenerationFeedback(\n    $sessionId: String!\n    $feedback: String!\n  ) {\n    sendDatasetGenerationFeedback(sessionId: $sessionId, feedback: $feedback)\n  }\n"): (typeof documents)["\n  mutation SendDatasetGenerationFeedback(\n    $sessionId: String!\n    $feedback: String!\n  ) {\n    sendDatasetGenerationFeedback(sessionId: $sessionId, feedback: $feedback)\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation AddTestCases(\n    $testSuiteId: UUID!\n    $testCases: [TestCaseWithLabelInput!]!\n  ) {\n    addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)\n  }\n"): (typeof documents)["\n  mutation AddTestCases(\n    $testSuiteId: UUID!\n    $testCases: [TestCaseWithLabelInput!]!\n  ) {\n    addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function graphql(source: "\n  query ListMetrics {\n    listMetrics {\n      id\n      name\n      description\n      config\n      account\n    }\n  }\n"): (typeof documents)["\n  query ListMetrics {\n    listMetrics {\n      id\n      name\n      description\n      config\n      account\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -146,6 +160,10 @@ export function graphql(source: "\n  query GetOptimizationLabelStats($testSuiteI
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query ListDataAdaptors($testSuiteId: UUID!) {\n    listDataAdaptors(testSuiteId: $testSuiteId) {\n      id\n      name\n      description\n      config\n      testSuite\n    }\n  }\n"): (typeof documents)["\n  query ListDataAdaptors($testSuiteId: UUID!) {\n    listDataAdaptors(testSuiteId: $testSuiteId) {\n      id\n      name\n      description\n      config\n      testSuite\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  subscription GenerateDataset(\n    $testSuiteId: UUID!\n    $size: Int!\n    $description: String!\n  ) {\n    generateDataset(\n      testSuiteId: $testSuiteId\n      size: $size\n      description: $description\n    ) {\n      status\n      message\n      progress\n      plan\n      generatedEntry\n      sessionId\n      total\n      completed\n    }\n  }\n"): (typeof documents)["\n  subscription GenerateDataset(\n    $testSuiteId: UUID!\n    $size: Int!\n    $description: String!\n  ) {\n    generateDataset(\n      testSuiteId: $testSuiteId\n      size: $size\n      description: $description\n    ) {\n      status\n      message\n      progress\n      plan\n      generatedEntry\n      sessionId\n      total\n      completed\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

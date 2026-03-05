@@ -794,6 +794,79 @@ class Mutation:
         )
         return str(html_path)
 
+    @strawberry.mutation
+    async def create_dataset(
+        self,
+        info: Info,
+        name: str,
+        row_schema: JSON,  # type: ignore[assignment]
+        test_suite_id: UUID | None = None,
+        description: str | None = None,
+    ) -> DatasetType:
+        """Create a local dataset directly (without file upload).
+
+        Used by the dataset generation workflow to create a dataset
+        record before entries are generated.
+
+        Args:
+            name: Display name for the dataset.
+            row_schema: JSON Schema describing the data entry shape.
+            test_suite_id: Optional UUID of the linked remote test suite.
+            description: Optional text description (stored in file_name).
+
+        Returns:
+            The created dataset object.
+        """
+        conn = info.context["db"]
+        file_name = name
+        schema_dict = row_schema if isinstance(row_schema, dict) else {}
+
+        dataset_id = await db.create_dataset(
+            conn,
+            file_name=file_name,
+            row_schema=schema_dict,
+            test_suite_id=str(test_suite_id) if test_suite_id else None,
+        )
+
+        return DatasetType(
+            id=dataset_id,
+            file_name=file_name,
+            created_at=datetime.now(),
+            row_schema=schema_dict,  # type: ignore[arg-type]
+            test_suite_id=test_suite_id,
+        )
+
+    @strawberry.mutation
+    async def add_data_entry(
+        self,
+        info: Info,
+        dataset_id: UUID,
+        data: JSON,  # type: ignore[assignment]
+    ) -> DataEntryType:
+        """Add a single data entry to an existing local dataset.
+
+        Used by the dataset generation workflow to add entries one at
+        a time as they are generated.
+
+        Args:
+            dataset_id: UUID of the local dataset to add the entry to.
+            data: JSON data object for the entry.
+
+        Returns:
+            The created data entry object.
+        """
+        conn = info.context["db"]
+        data_dict = data if isinstance(data, dict) else {}
+        entry_ids = await db.create_data_entries(
+            conn, dataset_id=dataset_id, rows=[data_dict]
+        )
+        entry_id = entry_ids[0]
+        return DataEntryType(
+            id=entry_id,
+            dataset_id=dataset_id,
+            data=data_dict,
+        )
+
 
 # ============================================================================
 # Subscriptions

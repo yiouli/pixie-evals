@@ -42,6 +42,28 @@ export type DataAdaptorType = {
   testSuite: Scalars['UUID']['output'];
 };
 
+export enum DatasetGenerationStatusEnum {
+  AwaitingFeedback = 'AWAITING_FEEDBACK',
+  Complete = 'COMPLETE',
+  Error = 'ERROR',
+  GeneratingData = 'GENERATING_DATA',
+  GeneratingDescriptions = 'GENERATING_DESCRIPTIONS',
+  Planning = 'PLANNING',
+  Saving = 'SAVING'
+}
+
+export type DatasetGenerationUpdateType = {
+  __typename?: 'DatasetGenerationUpdateType';
+  completed?: Maybe<Scalars['Int']['output']>;
+  generatedEntry?: Maybe<Scalars['JSON']['output']>;
+  message: Scalars['String']['output'];
+  plan?: Maybe<Scalars['String']['output']>;
+  progress: Scalars['Float']['output'];
+  sessionId?: Maybe<Scalars['String']['output']>;
+  status: DatasetGenerationStatusEnum;
+  total?: Maybe<Scalars['Int']['output']>;
+};
+
 export type EvaluatorType = {
   __typename?: 'EvaluatorType';
   description?: Maybe<Scalars['String']['output']>;
@@ -58,6 +80,7 @@ export type EvaluatorWithSignatureType = {
   inputSchema: Scalars['JSON']['output'];
   outputSchema: Scalars['JSON']['output'];
   savedProgram?: Maybe<Scalars['JSON']['output']>;
+  testSuiteDescription?: Maybe<Scalars['String']['output']>;
 };
 
 export type LabelDetailsInput = {
@@ -130,6 +153,7 @@ export type Mutation = {
   getAuthToken: AuthTokenType;
   labelTestCases: Array<Scalars['UUID']['output']>;
   removeTestCases: Array<Scalars['UUID']['output']>;
+  sendDatasetGenerationFeedback: Scalars['Boolean']['output'];
   signInWithOauth: AuthTokenType;
   signUp: AuthTokenType;
   skipLabeling: Scalars['Boolean']['output'];
@@ -189,6 +213,12 @@ export type MutationLabelTestCasesArgs = {
 export type MutationRemoveTestCasesArgs = {
   testCaseIds: Array<Scalars['UUID']['input']>;
   testSuiteId: Scalars['UUID']['input'];
+};
+
+
+export type MutationSendDatasetGenerationFeedbackArgs = {
+  feedback: Scalars['String']['input'];
+  sessionId: Scalars['String']['input'];
 };
 
 
@@ -294,6 +324,18 @@ export type QueryListLabelingUiTemplatesArgs = {
 
 export type QueryListTestCaseIdsArgs = {
   filters?: InputMaybe<TestCaseFiltersInput>;
+};
+
+export type Subscription = {
+  __typename?: 'Subscription';
+  generateDataset: DatasetGenerationUpdateType;
+};
+
+
+export type SubscriptionGenerateDatasetArgs = {
+  description: Scalars['String']['input'];
+  size: Scalars['Int']['input'];
+  testSuiteId: Scalars['UUID']['input'];
 };
 
 export type TestCaseFiltersInput = {
@@ -426,6 +468,22 @@ export type CreateDataAdaptorMutationVariables = Exact<{
 
 export type CreateDataAdaptorMutation = { __typename?: 'Mutation', createDataAdaptor: any };
 
+export type SendDatasetGenerationFeedbackMutationVariables = Exact<{
+  sessionId: Scalars['String']['input'];
+  feedback: Scalars['String']['input'];
+}>;
+
+
+export type SendDatasetGenerationFeedbackMutation = { __typename?: 'Mutation', sendDatasetGenerationFeedback: boolean };
+
+export type AddTestCasesMutationVariables = Exact<{
+  testSuiteId: Scalars['UUID']['input'];
+  testCases: Array<TestCaseWithLabelInput> | TestCaseWithLabelInput;
+}>;
+
+
+export type AddTestCasesMutation = { __typename?: 'Mutation', addTestCases: Array<any> };
+
 export type ListMetricsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -493,6 +551,15 @@ export type ListDataAdaptorsQueryVariables = Exact<{
 
 export type ListDataAdaptorsQuery = { __typename?: 'Query', listDataAdaptors: Array<{ __typename?: 'DataAdaptorType', id: any, name: string, description?: string | null, config: any, testSuite: any }> };
 
+export type GenerateDatasetSubscriptionVariables = Exact<{
+  testSuiteId: Scalars['UUID']['input'];
+  size: Scalars['Int']['input'];
+  description: Scalars['String']['input'];
+}>;
+
+
+export type GenerateDatasetSubscription = { __typename?: 'Subscription', generateDataset: { __typename?: 'DatasetGenerationUpdateType', status: DatasetGenerationStatusEnum, message: string, progress: number, plan?: string | null, generatedEntry?: any | null, sessionId?: string | null, total?: number | null, completed?: number | null } };
+
 
 export const GetAuthTokenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"GetAuthToken"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"username"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getAuthToken"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"username"},"value":{"kind":"Variable","name":{"kind":"Name","value":"username"}}},{"kind":"Argument","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"accessToken"}},{"kind":"Field","name":{"kind":"Name","value":"tokenType"}}]}}]}}]} as unknown as DocumentNode<GetAuthTokenMutation, GetAuthTokenMutationVariables>;
 export const SignUpDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SignUp"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"email"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"password"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"signUp"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"email"},"value":{"kind":"Variable","name":{"kind":"Name","value":"email"}}},{"kind":"Argument","name":{"kind":"Name","value":"password"},"value":{"kind":"Variable","name":{"kind":"Name","value":"password"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"accessToken"}},{"kind":"Field","name":{"kind":"Name","value":"tokenType"}}]}}]}}]} as unknown as DocumentNode<SignUpMutation, SignUpMutationVariables>;
@@ -503,6 +570,8 @@ export const LabelTestCasesDocument = {"kind":"Document","definitions":[{"kind":
 export const RemoveTestCasesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RemoveTestCases"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testCaseIds"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"removeTestCases"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}},{"kind":"Argument","name":{"kind":"Name","value":"testCaseIds"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testCaseIds"}}}]}]}}]} as unknown as DocumentNode<RemoveTestCasesMutation, RemoveTestCasesMutationVariables>;
 export const SkipLabelingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SkipLabeling"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testCaseId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"skipLabeling"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}},{"kind":"Argument","name":{"kind":"Name","value":"testCaseId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testCaseId"}}}]}]}}]} as unknown as DocumentNode<SkipLabelingMutation, SkipLabelingMutationVariables>;
 export const CreateDataAdaptorDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateDataAdaptor"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"config"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DataAdaptorConfigInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"description"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createDataAdaptor"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}},{"kind":"Argument","name":{"kind":"Name","value":"config"},"value":{"kind":"Variable","name":{"kind":"Name","value":"config"}}},{"kind":"Argument","name":{"kind":"Name","value":"description"},"value":{"kind":"Variable","name":{"kind":"Name","value":"description"}}}]}]}}]} as unknown as DocumentNode<CreateDataAdaptorMutation, CreateDataAdaptorMutationVariables>;
+export const SendDatasetGenerationFeedbackDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SendDatasetGenerationFeedback"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"sessionId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"feedback"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sendDatasetGenerationFeedback"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"sessionId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"sessionId"}}},{"kind":"Argument","name":{"kind":"Name","value":"feedback"},"value":{"kind":"Variable","name":{"kind":"Name","value":"feedback"}}}]}]}}]} as unknown as DocumentNode<SendDatasetGenerationFeedbackMutation, SendDatasetGenerationFeedbackMutationVariables>;
+export const AddTestCasesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AddTestCases"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testCases"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TestCaseWithLabelInput"}}}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"addTestCases"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}},{"kind":"Argument","name":{"kind":"Name","value":"testCases"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testCases"}}}]}]}}]} as unknown as DocumentNode<AddTestCasesMutation, AddTestCasesMutationVariables>;
 export const ListMetricsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListMetrics"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"listMetrics"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"config"}},{"kind":"Field","name":{"kind":"Name","value":"account"}}]}}]}}]} as unknown as DocumentNode<ListMetricsQuery, ListMetricsQueryVariables>;
 export const ListTestSuitesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListTestSuites"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"listTestSuites"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"account"}},{"kind":"Field","name":{"kind":"Name","value":"creator"}},{"kind":"Field","name":{"kind":"Name","value":"labelingUiTemplate"}},{"kind":"Field","name":{"kind":"Name","value":"config"}}]}}]}}]} as unknown as DocumentNode<ListTestSuitesQuery, ListTestSuitesQueryVariables>;
 export const ListTestCaseIdsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListTestCaseIds"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"filters"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"TestCaseFiltersInput"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"listTestCaseIds"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"filters"},"value":{"kind":"Variable","name":{"kind":"Name","value":"filters"}}}]}]}}]} as unknown as DocumentNode<ListTestCaseIdsQuery, ListTestCaseIdsQueryVariables>;
@@ -513,3 +582,4 @@ export const ListEvaluatorsDocument = {"kind":"Document","definitions":[{"kind":
 export const GetEvaluatorWithSignatureDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetEvaluatorWithSignature"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getEvaluatorWithSignature"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"inputSchema"}},{"kind":"Field","name":{"kind":"Name","value":"outputSchema"}},{"kind":"Field","name":{"kind":"Name","value":"savedProgram"}}]}}]}}]} as unknown as DocumentNode<GetEvaluatorWithSignatureQuery, GetEvaluatorWithSignatureQueryVariables>;
 export const GetOptimizationLabelStatsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetOptimizationLabelStats"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getOptimizationLabelStats"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"beforeCutoff"}},{"kind":"Field","name":{"kind":"Name","value":"afterCutoff"}},{"kind":"Field","name":{"kind":"Name","value":"cutoffDate"}}]}}]}}]} as unknown as DocumentNode<GetOptimizationLabelStatsQuery, GetOptimizationLabelStatsQueryVariables>;
 export const ListDataAdaptorsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListDataAdaptors"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"listDataAdaptors"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"config"}},{"kind":"Field","name":{"kind":"Name","value":"testSuite"}}]}}]}}]} as unknown as DocumentNode<ListDataAdaptorsQuery, ListDataAdaptorsQueryVariables>;
+export const GenerateDatasetDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"GenerateDataset"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"size"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"description"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"generateDataset"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}},{"kind":"Argument","name":{"kind":"Name","value":"size"},"value":{"kind":"Variable","name":{"kind":"Name","value":"size"}}},{"kind":"Argument","name":{"kind":"Name","value":"description"},"value":{"kind":"Variable","name":{"kind":"Name","value":"description"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"progress"}},{"kind":"Field","name":{"kind":"Name","value":"plan"}},{"kind":"Field","name":{"kind":"Name","value":"generatedEntry"}},{"kind":"Field","name":{"kind":"Name","value":"sessionId"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"completed"}}]}}]}}]} as unknown as DocumentNode<GenerateDatasetSubscription, GenerateDatasetSubscriptionVariables>;

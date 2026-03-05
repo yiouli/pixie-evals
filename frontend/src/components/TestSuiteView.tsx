@@ -18,12 +18,14 @@ import LabelRoundedIcon from "@mui/icons-material/LabelRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import AutoFixHighRoundedIcon from "@mui/icons-material/AutoFixHighRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { EditableText } from "./EditableText";
 import { MetricChip } from "./MetricChip";
 import { TestCaseDataGrid } from "./TestCaseDataGrid";
 import { ManualLabelingDialog } from "./ManualLabelingDialog";
 import { OptimizationDialog } from "./OptimizationDialog";
 import { ImportTestCasesDialog } from "./ImportTestCasesDialog";
+import { GenerateDatasetDialog } from "./GenerateDatasetDialog";
 import { useTestSuites } from "../hooks/useTestSuites";
 import {
   GET_TEST_SUITE_METRICS,
@@ -50,6 +52,7 @@ export function TestSuiteView() {
   const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>();
   const [optimizationOpen, setOptimizationOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
 
   // Fetch test suite data from remote server
   const { testSuites, loading: suitesLoading } = useTestSuites();
@@ -228,6 +231,13 @@ export function TestSuiteView() {
           >
             Import Test Cases
           </Button>
+          <Button
+            variant="outlined"
+            startIcon={<AutoAwesomeRoundedIcon />}
+            onClick={() => setGenerateOpen(true)}
+          >
+            Generate Dataset
+          </Button>
           <Tooltip
             title={
               canOptimize
@@ -352,6 +362,16 @@ export function TestSuiteView() {
         <ImportTestCasesDialog
           open={importOpen}
           onClose={() => setImportOpen(false)}
+          testSuiteId={testSuiteId}
+          onComplete={() => void refetchTestCases()}
+        />
+      )}
+
+      {/* Generate Dataset Dialog */}
+      {testSuiteId && (
+        <GenerateDatasetDialog
+          open={generateOpen}
+          onClose={() => setGenerateOpen(false)}
           testSuiteId={testSuiteId}
           onComplete={() => void refetchTestCases()}
         />

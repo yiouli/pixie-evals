@@ -25,6 +25,7 @@ vi.mock("@apollo/client", () => ({
     { loading: false, data: undefined, error: undefined },
   ],
   useSubscription: () => ({ error: undefined }),
+  useMutation: () => [vi.fn().mockResolvedValue({ data: {} })],
 }));
 
 vi.mock("../lib/apolloClient", () => ({
@@ -35,6 +36,34 @@ vi.mock("../lib/apolloClient", () => ({
 vi.mock("../graphql/remote/query", () => ({
   GET_TEST_SUITE_METRICS: "GET_TEST_SUITE_METRICS",
   GET_OPTIMIZATION_LABEL_STATS: "GET_OPTIMIZATION_LABEL_STATS",
+}));
+
+vi.mock("../graphql/remote/subscription", () => ({
+  GENERATE_DATASET: {},
+}));
+
+vi.mock("../graphql/remote/mutation", () => ({
+  SEND_DATASET_GENERATION_FEEDBACK: {},
+  ADD_TEST_CASES: {},
+}));
+
+vi.mock("../graphql/sdk/mutation", () => ({
+  CREATE_DATASET: {},
+  ADD_DATA_ENTRY: {},
+  UPLOAD_FILE: {},
+  LINK_DATASET_TO_TEST_SUITE: {},
+}));
+
+vi.mock("../generated/remote/graphql", () => ({
+  DatasetGenerationStatusEnum: {
+    Planning: "PLANNING",
+    AwaitingFeedback: "AWAITING_FEEDBACK",
+    GeneratingDescriptions: "GENERATING_DESCRIPTIONS",
+    GeneratingData: "GENERATING_DATA",
+    Saving: "SAVING",
+    Complete: "COMPLETE",
+    Error: "ERROR",
+  },
 }));
 
 // ---- other hooks -----------------------------------------------------------

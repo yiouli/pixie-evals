@@ -94,3 +94,21 @@ export const CREATE_DATA_ADAPTOR = graphql(`
     )
   }
 `);
+
+export const SEND_DATASET_GENERATION_FEEDBACK = graphql(`
+  mutation SendDatasetGenerationFeedback(
+    $sessionId: String!
+    $feedback: String!
+  ) {
+    sendDatasetGenerationFeedback(sessionId: $sessionId, feedback: $feedback)
+  }
+`);
+
+export const ADD_TEST_CASES = graphql(`
+  mutation AddTestCases(
+    $testSuiteId: UUID!
+    $testCases: [TestCaseWithLabelInput!]!
+  ) {
+    addTestCases(testSuiteId: $testSuiteId, testCases: $testCases)
+  }
+`);

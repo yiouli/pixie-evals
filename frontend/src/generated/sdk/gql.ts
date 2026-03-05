@@ -16,6 +16,8 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
 type Documents = {
     "\n  mutation UploadFile($file: Upload!) {\n    uploadFile(file: $file) {\n      id\n      fileName\n      createdAt\n      rowSchema\n    }\n  }\n": typeof types.UploadFileDocument,
     "\n  mutation LinkDatasetToTestSuite($datasetId: UUID!, $testSuiteId: UUID!) {\n    linkDatasetToTestSuite(datasetId: $datasetId, testSuiteId: $testSuiteId)\n  }\n": typeof types.LinkDatasetToTestSuiteDocument,
+    "\n  mutation CreateDataset(\n    $name: String!\n    $rowSchema: JSON!\n    $testSuiteId: UUID\n    $description: String\n  ) {\n    createDataset(\n      name: $name\n      rowSchema: $rowSchema\n      testSuiteId: $testSuiteId\n      description: $description\n    ) {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n": typeof types.CreateDatasetDocument,
+    "\n  mutation AddDataEntry($datasetId: UUID!, $data: JSON!) {\n    addDataEntry(datasetId: $datasetId, data: $data) {\n      id\n      datasetId\n      data\n    }\n  }\n": typeof types.AddDataEntryDocument,
     "\n  query ListDatasets {\n    listDatasets {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n": typeof types.ListDatasetsDocument,
     "\n  query GetDataset($id: UUID!) {\n    getDataset(id: $id) {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n": typeof types.GetDatasetDocument,
     "\n  query GetDataEntries($datasetId: UUID!, $offset: Int, $limit: Int) {\n    getDataEntries(datasetId: $datasetId, offset: $offset, limit: $limit) {\n      id\n      datasetId\n      data\n    }\n  }\n": typeof types.GetDataEntriesDocument,
@@ -29,6 +31,8 @@ type Documents = {
 const documents: Documents = {
     "\n  mutation UploadFile($file: Upload!) {\n    uploadFile(file: $file) {\n      id\n      fileName\n      createdAt\n      rowSchema\n    }\n  }\n": types.UploadFileDocument,
     "\n  mutation LinkDatasetToTestSuite($datasetId: UUID!, $testSuiteId: UUID!) {\n    linkDatasetToTestSuite(datasetId: $datasetId, testSuiteId: $testSuiteId)\n  }\n": types.LinkDatasetToTestSuiteDocument,
+    "\n  mutation CreateDataset(\n    $name: String!\n    $rowSchema: JSON!\n    $testSuiteId: UUID\n    $description: String\n  ) {\n    createDataset(\n      name: $name\n      rowSchema: $rowSchema\n      testSuiteId: $testSuiteId\n      description: $description\n    ) {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n": types.CreateDatasetDocument,
+    "\n  mutation AddDataEntry($datasetId: UUID!, $data: JSON!) {\n    addDataEntry(datasetId: $datasetId, data: $data) {\n      id\n      datasetId\n      data\n    }\n  }\n": types.AddDataEntryDocument,
     "\n  query ListDatasets {\n    listDatasets {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n": types.ListDatasetsDocument,
     "\n  query GetDataset($id: UUID!) {\n    getDataset(id: $id) {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n": types.GetDatasetDocument,
     "\n  query GetDataEntries($datasetId: UUID!, $offset: Int, $limit: Int) {\n    getDataEntries(datasetId: $datasetId, offset: $offset, limit: $limit) {\n      id\n      datasetId\n      data\n    }\n  }\n": types.GetDataEntriesDocument,
@@ -62,6 +66,14 @@ export function graphql(source: "\n  mutation UploadFile($file: Upload!) {\n    
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  mutation LinkDatasetToTestSuite($datasetId: UUID!, $testSuiteId: UUID!) {\n    linkDatasetToTestSuite(datasetId: $datasetId, testSuiteId: $testSuiteId)\n  }\n"): (typeof documents)["\n  mutation LinkDatasetToTestSuite($datasetId: UUID!, $testSuiteId: UUID!) {\n    linkDatasetToTestSuite(datasetId: $datasetId, testSuiteId: $testSuiteId)\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation CreateDataset(\n    $name: String!\n    $rowSchema: JSON!\n    $testSuiteId: UUID\n    $description: String\n  ) {\n    createDataset(\n      name: $name\n      rowSchema: $rowSchema\n      testSuiteId: $testSuiteId\n      description: $description\n    ) {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n"): (typeof documents)["\n  mutation CreateDataset(\n    $name: String!\n    $rowSchema: JSON!\n    $testSuiteId: UUID\n    $description: String\n  ) {\n    createDataset(\n      name: $name\n      rowSchema: $rowSchema\n      testSuiteId: $testSuiteId\n      description: $description\n    ) {\n      id\n      fileName\n      createdAt\n      rowSchema\n      testSuiteId\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation AddDataEntry($datasetId: UUID!, $data: JSON!) {\n    addDataEntry(datasetId: $datasetId, data: $data) {\n      id\n      datasetId\n      data\n    }\n  }\n"): (typeof documents)["\n  mutation AddDataEntry($datasetId: UUID!, $data: JSON!) {\n    addDataEntry(datasetId: $datasetId, data: $data) {\n      id\n      datasetId\n      data\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

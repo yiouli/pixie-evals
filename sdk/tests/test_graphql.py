@@ -410,3 +410,108 @@ class TestMutationScaffoldLabelingComponent:
             await mutation.scaffold_labeling_component(
                 info=_mock_info(), test_suite_id=uuid4()
             )
+
+
+# ============================================================================
+# TestMutationCreateDataset
+# ============================================================================
+
+
+class TestMutationCreateDataset:
+    """Test the create_dataset mutation."""
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk.graphql.db")
+    async def test_creates_dataset(self, mock_db):
+        """create_dataset returns a DatasetType with correct fields."""
+        ds_id = uuid4()
+        mock_db.create_dataset = AsyncMock(return_value=ds_id)
+
+        mutation = Mutation()
+        schema = {"type": "object", "properties": {"q": {"type": "string"}}}
+        result = await mutation.create_dataset(
+            info=_mock_info(),
+            name="Generated Dataset",
+            row_schema=schema,
+        )
+
+        assert isinstance(result, DatasetType)
+        assert result.id == ds_id
+        assert result.file_name == "Generated Dataset"
+        assert result.row_schema == schema
+        assert result.test_suite_id is None
+        mock_db.create_dataset.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk.graphql.db")
+    async def test_with_test_suite_id(self, mock_db):
+        """create_dataset passes test_suite_id to db when provided."""
+        ds_id = uuid4()
+        ts_id = uuid4()
+        mock_db.create_dataset = AsyncMock(return_value=ds_id)
+
+        mutation = Mutation()
+        result = await mutation.create_dataset(
+            info=_mock_info(),
+            name="My Dataset",
+            row_schema={"type": "object"},
+            test_suite_id=ts_id,
+        )
+
+        assert result.test_suite_id == ts_id
+        call_kwargs = mock_db.create_dataset.call_args
+        assert call_kwargs.kwargs.get("test_suite_id") == str(ts_id)
+
+
+# ============================================================================
+# TestMutationAddDataEntry
+# ============================================================================
+
+
+class TestMutationAddDataEntry:
+    """Test the add_data_entry mutation."""
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk.graphql.db")
+    async def test_adds_entry(self, mock_db):
+        """add_data_entry returns a DataEntryType with correct fields."""
+        ds_id = uuid4()
+        entry_id = uuid4()
+        mock_db.create_data_entries = AsyncMock(return_value=[entry_id])
+
+        mutation = Mutation()
+        data = {"prompt": "hello", "response": "world"}
+        info = _mock_info()
+        result = await mutation.add_data_entry(
+            info=info,
+            dataset_id=ds_id,
+            data=data,
+        )
+
+        assert isinstance(result, DataEntryType)
+        assert result.id == entry_id
+        assert result.dataset_id == ds_id
+        assert result.data == data
+        mock_db.create_data_entries.assert_called_once()
+        call_kwargs = mock_db.create_data_entries.call_args.kwargs
+        assert call_kwargs["dataset_id"] == ds_id
+        assert call_kwargs["rows"] == [data]
+
+    @pytest.mark.asyncio
+    @patch("pixie_sdk.graphql.db")
+    async def test_handles_non_dict_data(self, mock_db):
+        """add_data_entry handles non-dict data gracefully."""
+        entry_id = uuid4()
+        ds_id = uuid4()
+        mock_db.create_data_entries = AsyncMock(return_value=[entry_id])
+
+        mutation = Mutation()
+        # Pass a non-dict (string) — should fall back to empty dict
+        result = await mutation.add_data_entry(
+            info=_mock_info(),
+            dataset_id=ds_id,
+            data="not a dict",  # type: ignore[arg-type]
+        )
+
+        assert isinstance(result, DataEntryType)
+        assert result.data == {}

@@ -16,3 +16,35 @@ export const LINK_DATASET_TO_TEST_SUITE = graphql(`
     linkDatasetToTestSuite(datasetId: $datasetId, testSuiteId: $testSuiteId)
   }
 `);
+
+export const CREATE_DATASET = graphql(`
+  mutation CreateDataset(
+    $name: String!
+    $rowSchema: JSON!
+    $testSuiteId: UUID
+    $description: String
+  ) {
+    createDataset(
+      name: $name
+      rowSchema: $rowSchema
+      testSuiteId: $testSuiteId
+      description: $description
+    ) {
+      id
+      fileName
+      createdAt
+      rowSchema
+      testSuiteId
+    }
+  }
+`);
+
+export const ADD_DATA_ENTRY = graphql(`
+  mutation AddDataEntry($datasetId: UUID!, $data: JSON!) {
+    addDataEntry(datasetId: $datasetId, data: $data) {
+      id
+      datasetId
+      data
+    }
+  }
+`);

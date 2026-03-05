@@ -5,7 +5,12 @@ import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { createClient } from "graphql-ws";
 import { useAuthStore } from "./store";
-import { REMOTE_SERVER_URL, SDK_SERVER_URL, SDK_SERVER_WS_URL } from "./env";
+import {
+  REMOTE_SERVER_URL,
+  REMOTE_SERVER_WS_URL,
+  SDK_SERVER_URL,
+  SDK_SERVER_WS_URL,
+} from "./env";
 
 // Auth middleware — attaches JWT to every remote-server request.
 // Uses the recommended setContext helper to properly merge headers.
@@ -35,13 +40,35 @@ const authErrorLink = onError(({ graphQLErrors }) => {
   }
 });
 
-// Remote pixie-server client (with auth + auto-logout on expiry)
+// Remote pixie-server client (with auth + auto-logout on expiry + WS for subscriptions)
 const remoteHttpLink = new HttpLink({
   uri: REMOTE_SERVER_URL,
 });
 
+const remoteWsLink = new GraphQLWsLink(
+  createClient({
+    url: REMOTE_SERVER_WS_URL,
+    connectionParams: () => {
+      const token = useAuthStore.getState().token;
+      return token ? { authorization: `Bearer ${token}` } : {};
+    },
+  }),
+);
+
+const remoteLink = split(
+  ({ query }) => {
+    const definition = getMainDefinition(query);
+    return (
+      definition.kind === "OperationDefinition" &&
+      definition.operation === "subscription"
+    );
+  },
+  remoteWsLink,
+  authErrorLink.concat(authLink).concat(remoteHttpLink),
+);
+
 export const remoteClient = new ApolloClient({
-  link: authErrorLink.concat(authLink).concat(remoteHttpLink),
+  link: remoteLink,
   cache: new InMemoryCache(),
 });
 

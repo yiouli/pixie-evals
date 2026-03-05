@@ -74,10 +74,26 @@ export type EvaluationUpdate = {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  addDataEntry: DataEntryType;
+  createDataset: DatasetType;
   deleteDataset: Scalars['Boolean']['output'];
   linkDatasetToTestSuite: Scalars['Boolean']['output'];
   scaffoldLabelingComponent: Scalars['String']['output'];
   uploadFile: DatasetType;
+};
+
+
+export type MutationAddDataEntryArgs = {
+  data: Scalars['JSON']['input'];
+  datasetId: Scalars['UUID']['input'];
+};
+
+
+export type MutationCreateDatasetArgs = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  name: Scalars['String']['input'];
+  rowSchema: Scalars['JSON']['input'];
+  testSuiteId?: InputMaybe<Scalars['UUID']['input']>;
 };
 
 
@@ -123,7 +139,7 @@ export type Query = {
   dataEntryCount: Scalars['Int']['output'];
   getDataEntries: Array<DataEntryType>;
   getDataset?: Maybe<DatasetType>;
-  getLabelingHtml: Scalars['String']['output'];
+  getLabelingHtml?: Maybe<Scalars['String']['output']>;
   listDatasets: Array<DatasetType>;
   listLabelingComponents: Array<Scalars['String']['output']>;
   renderLabelingUi: Scalars['String']['output'];
@@ -217,6 +233,24 @@ export type LinkDatasetToTestSuiteMutationVariables = Exact<{
 
 export type LinkDatasetToTestSuiteMutation = { __typename?: 'Mutation', linkDatasetToTestSuite: boolean };
 
+export type CreateDatasetMutationVariables = Exact<{
+  name: Scalars['String']['input'];
+  rowSchema: Scalars['JSON']['input'];
+  testSuiteId?: InputMaybe<Scalars['UUID']['input']>;
+  description?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+
+export type CreateDatasetMutation = { __typename?: 'Mutation', createDataset: { __typename?: 'DatasetType', id: any, fileName: string, createdAt: any, rowSchema: any, testSuiteId?: any | null } };
+
+export type AddDataEntryMutationVariables = Exact<{
+  datasetId: Scalars['UUID']['input'];
+  data: Scalars['JSON']['input'];
+}>;
+
+
+export type AddDataEntryMutation = { __typename?: 'Mutation', addDataEntry: { __typename?: 'DataEntryType', id: any, datasetId: any, data: any } };
+
 export type ListDatasetsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -243,7 +277,7 @@ export type GetLabelingHtmlQueryVariables = Exact<{
 }>;
 
 
-export type GetLabelingHtmlQuery = { __typename?: 'Query', getLabelingHtml: string };
+export type GetLabelingHtmlQuery = { __typename?: 'Query', getLabelingHtml?: string | null };
 
 export type ListLabelingComponentsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -283,6 +317,8 @@ export type ImportTestCasesProgressSubscription = { __typename?: 'Subscription',
 
 export const UploadFileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UploadFile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"file"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Upload"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uploadFile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"file"},"value":{"kind":"Variable","name":{"kind":"Name","value":"file"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"fileName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"rowSchema"}}]}}]}}]} as unknown as DocumentNode<UploadFileMutation, UploadFileMutationVariables>;
 export const LinkDatasetToTestSuiteDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"LinkDatasetToTestSuite"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"datasetId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"linkDatasetToTestSuite"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"datasetId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"datasetId"}}},{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}}]}]}}]} as unknown as DocumentNode<LinkDatasetToTestSuiteMutation, LinkDatasetToTestSuiteMutationVariables>;
+export const CreateDatasetDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"CreateDataset"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"name"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"rowSchema"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"JSON"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"description"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"createDataset"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"name"},"value":{"kind":"Variable","name":{"kind":"Name","value":"name"}}},{"kind":"Argument","name":{"kind":"Name","value":"rowSchema"},"value":{"kind":"Variable","name":{"kind":"Name","value":"rowSchema"}}},{"kind":"Argument","name":{"kind":"Name","value":"testSuiteId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"testSuiteId"}}},{"kind":"Argument","name":{"kind":"Name","value":"description"},"value":{"kind":"Variable","name":{"kind":"Name","value":"description"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"fileName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"rowSchema"}},{"kind":"Field","name":{"kind":"Name","value":"testSuiteId"}}]}}]}}]} as unknown as DocumentNode<CreateDatasetMutation, CreateDatasetMutationVariables>;
+export const AddDataEntryDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"AddDataEntry"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"datasetId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"data"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"JSON"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"addDataEntry"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"datasetId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"datasetId"}}},{"kind":"Argument","name":{"kind":"Name","value":"data"},"value":{"kind":"Variable","name":{"kind":"Name","value":"data"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"datasetId"}},{"kind":"Field","name":{"kind":"Name","value":"data"}}]}}]}}]} as unknown as DocumentNode<AddDataEntryMutation, AddDataEntryMutationVariables>;
 export const ListDatasetsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"ListDatasets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"listDatasets"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"fileName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"rowSchema"}},{"kind":"Field","name":{"kind":"Name","value":"testSuiteId"}}]}}]}}]} as unknown as DocumentNode<ListDatasetsQuery, ListDatasetsQueryVariables>;
 export const GetDatasetDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetDataset"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getDataset"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"fileName"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"rowSchema"}},{"kind":"Field","name":{"kind":"Name","value":"testSuiteId"}}]}}]}}]} as unknown as DocumentNode<GetDatasetQuery, GetDatasetQueryVariables>;
 export const GetDataEntriesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetDataEntries"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"datasetId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UUID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"offset"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getDataEntries"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"datasetId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"datasetId"}}},{"kind":"Argument","name":{"kind":"Name","value":"offset"},"value":{"kind":"Variable","name":{"kind":"Name","value":"offset"}}},{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"datasetId"}},{"kind":"Field","name":{"kind":"Name","value":"data"}}]}}]}}]} as unknown as DocumentNode<GetDataEntriesQuery, GetDataEntriesQueryVariables>;
